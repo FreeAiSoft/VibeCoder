@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="AGENTS.md" />
+  </Folder>
+  <Project Path="VibeCoder.Core/VibeCoder.Core.csproj" />
+  <Project Path="VibeCoder.Tests/VibeCoder.Tests.csproj" />
+  <Project Path="VibeCoder/VibeCoder.csproj">
+    <Deploy />
+  </Project>
+</Solution>

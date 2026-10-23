@@ -1,0 +1,125 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+    <!-- VSIX settings -->
+    <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Remove="VibeCoderPackage.vsct" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectCapability Include="CreateVsixContainer" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
+    <PackageReference Include="Markdig" Version="1.4.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NLog" Version="4.6.8" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Vosk" Version="0.3.38" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System.Design" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VibeCoder.Core\VibeCoder.Core.csproj" />
+    <ProjectReference Include="..\..\..\..\Desktop\MaterialDesignInXamlToolkit-master\src\MaterialDesignThemes.Wpf\MaterialDesignThemes.Wpf.csproj" />
+    <ProjectReference Include="..\..\..\..\Desktop\MaterialDesignInXamlToolkit-master\src\MaterialDesign3.MaterialColorUtilities\MaterialColorUtilities.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- VSSDK excludes Newtonsoft.Json from the VSIX by default; force-include it
+         because VibeCoder.Core.dll depends on it and VS does not resolve it for third-party extensions. -->
+    <VSIXSourceItem Include="$(OutputPath)Newtonsoft.Json.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NLog.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Markdig.dll" />
+    <VSIXSourceItem Include="$(OutputPath)MaterialDesignThemes.Wpf.dll" />
+    <VSIXSourceItem Include="$(OutputPath)MaterialDesignColors.dll" />
+    <VSIXSourceItem Include="$(OutputPath)MaterialColorUtilities.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Microsoft.Xaml.Behaviors.dll" />
+    <!-- Markdig's transitive dependencies are not auto-packaged by VSSDK for SDK-style
+         projects. Ship them explicitly, otherwise Markdig fails at runtime with
+         "Could not load file or assembly 'System.Memory, Version=4.0.5.0'". -->
+    <VSIXSourceItem Include="$(OutputPath)System.Memory.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Buffers.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Runtime.CompilerServices.Unsafe.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Numerics.Vectors.dll" />
+    <VSIXSourceItem Include="$(OutputPath)System.Threading.Tasks.Extensions.dll" />
+    <!-- Speech-to-text runtime dependencies: NAudio (microphone capture) and Vosk (offline STT). -->
+    <VSIXSourceItem Include="$(OutputPath)NAudio.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Core.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.WinMM.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Wasapi.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Midi.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.Asio.dll" />
+    <VSIXSourceItem Include="$(OutputPath)NAudio.WinForms.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Vosk.dll" />
+    <!-- Native Vosk binaries (win-x64) and their MinGW runtime dependencies. -->
+    <VSIXSourceItem Include="$(OutputPath)libvosk.dll" />
+    <VSIXSourceItem Include="$(OutputPath)libgcc_s_seh-1.dll" />
+    <VSIXSourceItem Include="$(OutputPath)libstdc++-6.dll" />
+    <VSIXSourceItem Include="$(OutputPath)libwinpthread-1.dll" />
+    <!-- WebView2 (Mermaid diagram rendering): managed assemblies + native loader. -->
+    <VSIXSourceItem Include="$(OutputPath)Microsoft.Web.WebView2.Core.dll" />
+    <VSIXSourceItem Include="$(OutputPath)Microsoft.Web.WebView2.Wpf.dll" />
+    <VSIXSourceItem Include="$(OutputPath)WebView2Loader.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- System.Data.SQLite native interop must ship under x86/x64 subfolders so the
+         managed provider can locate SQLite.Interop.dll at runtime inside the VSIX. -->
+    <Content Include="$(OutputPath)x86\SQLite.Interop.dll">
+      <Link>x86\SQLite.Interop.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="$(OutputPath)x64\SQLite.Interop.dll">
+      <Link>x64\SQLite.Interop.dll</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+  <Target Name="CopySqliteInteropToOutput" BeforeTargets="GetVsixSourceItems">
+    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x86\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x86" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\build\net46\x64\SQLite.Interop.dll" DestinationFolder="$(OutputPath)x64" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyWebView2LoaderToOutput" BeforeTargets="GetVsixSourceItems">
+    <!-- The WebView2 NuGet package only drops the native loader under runtimes\ for this
+         SDK-style net472 project. Copy the x64 loader next to the managed assemblies so the
+         VSIX (and F5 debug) can find it. -->
+    <Copy SourceFiles="$(NuGetPackageRoot)microsoft.web.webview2\1.0.4258.31\runtimes\win-x64\native\WebView2Loader.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+  <ItemGroup>
+    <!-- Ship prompt template files next to the extension assemblies and inside the VSIX. -->
+    <Content Include="Prompts\**\*">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Mermaid.js bundled as an embedded resource and read at runtime by MermaidDiagramControl. -->
+    <EmbeddedResource Include="Assets\mermaid.min.js">
+      <LogicalName>VibeCoder.Assets.mermaid.min.js</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <VSCTCompile Include="VibeCoderPackage.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+      <Generator>VsctGenerator</Generator>
+    </VSCTCompile>
+  </ItemGroup>
+</Project>
