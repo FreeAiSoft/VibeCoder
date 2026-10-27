@@ -2685,6 +2685,7 @@ namespace VibeCoder
                     Kind = message.Kind,
                     Text = question.Question ?? "",
                     ToolName = question.Answer ?? "",
+                    OptionsJson = QuestionOptionsCodec.Encode(question.Options),
                     Reasoning = message.Reasoning,
                     Mode = message.Mode
                 };
@@ -2711,6 +2712,7 @@ namespace VibeCoder
                     Payload = new QuestionPayload
                     {
                         Question = m.Text ?? "",
+                        Options = QuestionOptionsCodec.Decode(m.OptionsJson),
                         Answer = m.ToolName ?? "",
                         IsSkipped = string.Equals(m.ToolName, SkipAnswerText, StringComparison.Ordinal)
                     }
