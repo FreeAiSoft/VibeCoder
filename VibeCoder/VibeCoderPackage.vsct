@@ -70,6 +70,12 @@
           <ButtonText>Send to Vibe Coder</ButtonText>
         </Strings>
       </Button>
+      <Button guid="guidVibeCoderPackageCmdSet" id="cmdidSendExceptionToChat" priority="0x0100" type="Button">
+        <Parent guid="guidVibeCoderPackageCmdSet" id="grpidEditorContextMenu" />
+        <Strings>
+          <ButtonText>Send exception to Vibe Coder</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
 
     <!--The bitmaps section is used to define the bitmaps that are used for the commands.-->
@@ -94,6 +100,7 @@
       <IDSymbol name="grpidErrorListContextMenu" value="4131" />
       <IDSymbol name="cmdidSendSelectionToMessagebox" value="4132" />
       <IDSymbol name="grpidEditorContextMenu" value="4133" />
+      <IDSymbol name="cmdidSendExceptionToChat" value="4134" />
     </GuidSymbol>
 
     <GuidSymbol name="guidImages" value="{d20b5595-3b34-4432-b26d-4ce5956173db}" >

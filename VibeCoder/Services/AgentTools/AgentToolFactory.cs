@@ -35,6 +35,8 @@ namespace VibeCoder.Services.AgentTools
         private readonly Func<string, string, CancellationToken, Task<string>> _spawnSubAgentAsync;
         private readonly bool _enableSubagents;
         private readonly int _subagentMaxDepth;
+        private readonly Func<string, bool, CancellationToken, Task<string>> _saveCheckpointAsync;
+        private readonly bool _checkpointsEnabled;
         private readonly AsyncLocal<int> _subagentDepth = new AsyncLocal<int>();
 
         public AgentToolFactory(
@@ -47,7 +49,9 @@ namespace VibeCoder.Services.AgentTools
             MemoryBankMode memoryBankMode,
             Func<string, string, CancellationToken, Task<string>> spawnSubAgentAsync,
             bool enableSubagents,
-            int subagentMaxDepth)
+            int subagentMaxDepth,
+            Func<string, bool, CancellationToken, Task<string>> saveCheckpointAsync = null,
+            bool checkpointsEnabled = true)
         {
             _ai = ai ?? throw new ArgumentNullException(nameof(ai));
             _getSolutionDir = getSolutionDir ?? throw new ArgumentNullException(nameof(getSolutionDir));
@@ -59,6 +63,8 @@ namespace VibeCoder.Services.AgentTools
             _spawnSubAgentAsync = spawnSubAgentAsync ?? throw new ArgumentNullException(nameof(spawnSubAgentAsync));
             _enableSubagents = enableSubagents;
             _subagentMaxDepth = subagentMaxDepth > 0 ? subagentMaxDepth : 2;
+            _saveCheckpointAsync = saveCheckpointAsync;
+            _checkpointsEnabled = checkpointsEnabled && saveCheckpointAsync != null;
         }
         public AgentToolRegistry CreateRegistry()
         {
@@ -1089,6 +1095,9 @@ namespace VibeCoder.Services.AgentTools
             var p = ResolvePath(args["path"]?.Value<string>() ?? "");
             if (string.IsNullOrWhiteSpace(p)) return "Missing \"path\" argument.";
 
+            // Snapshot the current file state before mutating it, so the edit is reversible.
+            await SaveCheckpointBeforeEditAsync(p, ct).ConfigureAwait(false);
+
             var newText = args["new_text"]?.Value<string>() ?? "";
             var oldText = args["old_text"]?.Value<string>();
             int? insertLine = null;
@@ -1161,6 +1170,21 @@ namespace VibeCoder.Services.AgentTools
         {
             var p = ResolvePath(args["path"]?.Value<string>() ?? "");
             return Task.FromResult(string.IsNullOrWhiteSpace(p) ? "file" : p);
+        }
+
+        /// <summary>Best-effort snapshot of the workspace before an edit; failures never block the edit.</summary>
+        private async Task SaveCheckpointBeforeEditAsync(string path, CancellationToken ct)
+        {
+            if (!_checkpointsEnabled || _saveCheckpointAsync == null) return;
+
+            try
+            {
+                await _saveCheckpointAsync("editor: " + path, false, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LogService.Warn("Checkpoint save failed: " + ex.Message);
+            }
         }
 
         private static string ReadDiskText(string path)

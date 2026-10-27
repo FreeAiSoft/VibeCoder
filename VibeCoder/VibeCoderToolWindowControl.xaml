@@ -1530,6 +1530,8 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,2,0,4">
@@ -1611,6 +1613,14 @@
                                              Style="{StaticResource CompactOutlinedTextBox}"
                                              md:HintAssist.Hint="Chat log file path"/>
                                 </DockPanel>
+                                <StackPanel Grid.Row="15" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,2,0,4">
+                                    <ToggleButton x:Name="AutoCaptureRuntimeExceptionsSwitch" Style="{StaticResource SwitchToggleButtonStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Auto-capture runtime exceptions" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource Dark.Text}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,2,0,4">
+                                    <ToggleButton x:Name="CheckpointsEnabledSwitch" Style="{StaticResource SwitchToggleButtonStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Enable checkpoints (shadow git snapshots)" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{DynamicResource Dark.Text}"/>
+                                </StackPanel>
                             </Grid>
                         </ScrollViewer>
                     </TabItem>

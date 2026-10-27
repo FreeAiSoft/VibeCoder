@@ -90,7 +90,10 @@ namespace VibeCoder.Core.Models
         /// <summary>An interactive question asked by the agent, with answer options.</summary>
         Question,
         /// <summary>A sub-agent (spawn_agent) status card: live progress and final report.</summary>
-        Subagent
+        Subagent,
+
+        /// <summary>A saved checkpoint (shadow-git snapshot) with Compare/Restore actions.</summary>
+        Checkpoint
     }
 
     /// <summary>Class of an AI provider failure, used by the agent loop to recover from context overflow.</summary>
@@ -127,6 +130,33 @@ namespace VibeCoder.Core.Models
         public string ErrorLevelName { get; set; }
         public string Category { get; set; }
     }
+
+    /// <summary>
+    /// A snapshot of an exception captured from the Visual Studio debugger while it is
+    /// stopped on the exception. Stored as plain text so it can be handed to the agent
+    /// without any dependency on EnvDTE.
+    /// </summary>
+    public class DebuggerExceptionSnapshot
+    {
+        /// <summary>Fully qualified exception type, e.g. "System.NullReferenceException".</summary>
+        public string TypeName { get; set; } = "";
+
+        /// <summary>Short message of the top-level exception.</summary>
+        public string Message { get; set; } = "";
+
+        /// <summary>
+        /// Full exception dump produced by <c>Exception.ToString()</c>: type, message, stack
+        /// trace and the complete chain of nested <c>InnerException</c> values.
+        /// </summary>
+        public string ExceptionDump { get; set; } = "";
+
+        /// <summary>Reason the debugger entered break mode (e.g. "dbgEventReasonExceptionThrown").</summary>
+        public string BreakReason { get; set; } = "";
+
+        /// <summary>Current stack frame / function name at the stop location, when available.</summary>
+        public string Location { get; set; } = "";
+    }
+
 
     /// <summary>Agent response in free-form chat: final text + the model's "reasoning" (when the provider emits it).</summary>
     public class ChatResponse

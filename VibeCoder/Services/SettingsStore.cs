@@ -104,6 +104,9 @@ namespace VibeCoder.Services
         /// <summary>Allow the agent to spawn sub-agents (spawn_agent tool).</summary>
         public bool AllowSubagents { get; set; } = false;
 
+        /// <summary>Automatically snapshot files into a shadow git repository before edits (checkpoints).</summary>
+        public bool CheckpointsEnabled { get; set; } = true;
+
         /// <summary>Maximum agent-loop iterations for a single sub-agent.</summary>
         public int SubagentMaxIterations { get; set; } = 4;
 
@@ -136,6 +139,9 @@ namespace VibeCoder.Services
 
         /// <summary>Automatically send recognized speech instead of inserting it into the input box.</summary>
         public bool SpeechAutoSend { get; set; } = false;
+        /// <summary>Automatically send runtime exceptions that break the debugger to the agent chat.</summary>
+        public bool AutoCaptureRuntimeExceptions { get; set; } = true;
+
 
         // ---- Theme ----
         /// <summary>Base theme: "Dark" or "Light".</summary>

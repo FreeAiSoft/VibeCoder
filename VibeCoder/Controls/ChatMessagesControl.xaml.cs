@@ -43,6 +43,12 @@ namespace VibeCoder.Controls
         /// <summary>Raised when the user skips a question message.</summary>
         public event Action? QuestionSkipped;
 
+        /// <summary>Raised when the user clicks the Compare button of a checkpoint indicator.</summary>
+        public event Action<CheckpointPayload>? CheckpointCompareRequested;
+
+        /// <summary>Raised when the user clicks the Restore button of a checkpoint indicator.</summary>
+        public event Action<CheckpointPayload>? CheckpointRestoreRequested;
+
         public void ScrollToEnd()
         {
             MessageScroll.ScrollToEnd();
@@ -70,6 +76,18 @@ namespace VibeCoder.Controls
         private void OnQuestionSkip(object sender, RoutedEventArgs e)
         {
             QuestionSkipped?.Invoke();
+        }
+
+        private void OnCheckpointCompare(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button { Tag: ChatMessage { Payload: CheckpointPayload payload } })
+                CheckpointCompareRequested?.Invoke(payload);
+        }
+
+        private void OnCheckpointRestore(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button { Tag: ChatMessage { Payload: CheckpointPayload payload } })
+                CheckpointRestoreRequested?.Invoke(payload);
         }
 
         /// <summary>
