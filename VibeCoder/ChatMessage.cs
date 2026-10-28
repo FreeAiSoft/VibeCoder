@@ -20,6 +20,7 @@ namespace VibeCoder
         private string _mode = "";
         private bool _isThinking;
         private bool _isPartial;
+        private bool _isToolExpanded;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -38,6 +39,7 @@ namespace VibeCoder
                     OnPropertyChanged(nameof(SingleLineDisplayText));
                     OnPropertyChanged(nameof(Blocks));
                     OnPropertyChanged(nameof(KindName));
+                    OnPropertyChanged(nameof(CanExpandTool));
                 }
             }
         }
@@ -60,6 +62,7 @@ namespace VibeCoder
                     OnPropertyChanged(nameof(DisplayText));
                     OnPropertyChanged(nameof(SingleLineDisplayText));
                     OnPropertyChanged(nameof(Blocks));
+                    OnPropertyChanged(nameof(CanExpandTool));
                 }
             }
         }
@@ -124,6 +127,35 @@ namespace VibeCoder
             set { if (_isPartial != value) { _isPartial = value; OnPropertyChanged(); } }
         }
 
+        /// <summary>True when a tool-call message is expanded to show its full output (collapsed by default).</summary>
+        public bool IsToolExpanded
+        {
+            get => _isToolExpanded;
+            set
+            {
+                if (_isToolExpanded != value)
+                {
+                    _isToolExpanded = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(DisplayText));
+                    OnPropertyChanged(nameof(SingleLineDisplayText));
+                    OnPropertyChanged(nameof(Blocks));
+                }
+            }
+        }
+
+        /// <summary>True when the tool-call message has more output than the collapsed preview shows.</summary>
+        public bool CanExpandTool
+        {
+            get
+            {
+                if (Kind != ChatMessageKind.ToolCall)
+                    return false;
+                var full = (Payload as ToolCallPayload)?.Result ?? "";
+                return ToolCallDisplayFormatter.HasMore(full, ToolCallDisplayFormatter.CollapsedPreviewLines);
+            }
+        }
+
         /// <summary>When this entry was created (UTC).</summary>
         public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
 
@@ -156,13 +188,20 @@ namespace VibeCoder
         {
             get
             {
-                if (Kind == ChatMessageKind.ToolCall || Kind == ChatMessageKind.ToolBlocked)
+                if (Kind == ChatMessageKind.ToolCall)
+                {
+                    var p = Payload as ToolCallPayload;
+                    var full = p?.Result ?? "";
+                    if (!IsToolExpanded)
+                        return ToolCallDisplayFormatter.Collapse(full, ToolCallDisplayFormatter.CollapsedPreviewLines);
+                    return full;
+                }
+
+                if (Kind == ChatMessageKind.ToolBlocked)
                 {
                     var p = Payload as ToolCallPayload;
                     var name = p?.ToolName ?? "";
-                    if (Kind == ChatMessageKind.ToolBlocked)
-                        return "⛔ " + name + " blocked in Plan mode.";
-                    return "⚙ " + name + " → " + (p?.Result ?? "");
+                    return "⛔ " + name + " blocked in Plan mode.";
                 }
 
                 if (Kind == ChatMessageKind.Question)

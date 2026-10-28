@@ -300,7 +300,7 @@ namespace VibeCoder.Services.AgentTools
                 .Select(e => ResolvePath(e.Path))
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .ToList();
-            return Task.FromResult(paths.Count == 0 ? string.Empty : string.Join(", ", paths));
+            return Task.FromResult(paths.Count == 0 ? string.Empty : string.Join("\n", paths));
         }
 
         private static List<ReadFilesEntry> ParseReadFilesEntries(JToken files)

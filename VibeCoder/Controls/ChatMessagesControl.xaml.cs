@@ -3,14 +3,15 @@ using System.Collections;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using VibeCoder.Controls.Messages;
 
 namespace VibeCoder.Controls
 {
     /// <summary>
-    /// Reusable scrolling chat list: a <see cref="ScrollViewer"/> with a 5px scrollbar
-    /// hosting an <see cref="ItemsControl"/> of <see cref="ChatMessage"/> entries.
-    /// Message interactions (copy, question answer/skip) are surfaced as events so the
-    /// host can keep its own business logic.
+    /// Reusable scrolling chat list: a ScrollViewer hosting an ItemsControl of ChatMessage
+    /// entries. Each kind is rendered by its own DataTemplate (selected by
+    /// ChatMessageTemplateSelector); the shared chrome lives in MessageChrome. Interactions
+    /// (copy, question answer/skip, checkpoint compare/restore) are surfaced as events.
     /// </summary>
     public partial class ChatMessagesControl : UserControl
     {
@@ -22,9 +23,10 @@ namespace VibeCoder.Controls
         {
             InitializeComponent();
             MessageScroll.ScrollChanged += OnMessageScrollChanged;
+            AddHandler(MessageEvents.CopyRequestedEvent, new RoutedEventHandler(OnCopyRequestedRouted));
         }
 
-        /// <summary>Collection of messages rendered by the inner <see cref="ItemsControl"/>.</summary>
+        /// <summary>Collection of messages rendered by the inner ItemsControl.</summary>
         public IEnumerable ItemsSource
         {
             get => (IEnumerable)GetValue(ItemsSourceProperty);
@@ -59,10 +61,10 @@ namespace VibeCoder.Controls
             ScrollChanged?.Invoke(this, e);
         }
 
-        private void OnCopyMessage(object sender, RoutedEventArgs e)
+        private void OnCopyRequestedRouted(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement { DataContext: ChatMessage message })
-                CopyMessageRequested?.Invoke(message);
+            if (e is ChatMessageRoutedEventArgs args)
+                CopyMessageRequested?.Invoke(args.Message);
         }
 
         private void OnQuestionOptionClick(object sender, RoutedEventArgs e)
@@ -88,28 +90,6 @@ namespace VibeCoder.Controls
         {
             if (sender is Button { Tag: ChatMessage { Payload: CheckpointPayload payload } })
                 CheckpointRestoreRequested?.Invoke(payload);
-        }
-
-        /// <summary>
-        /// Forwards the mouse wheel from the code block's horizontal-only ScrollViewer to its
-        /// parent, so hovering over a code block still scrolls the chat list vertically.
-        /// </summary>
-        private void OnCodeScrollPreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (e.Handled)
-                return;
-
-            e.Handled = true;
-
-            var parent = (sender as FrameworkElement)?.Parent as UIElement;
-            if (parent == null)
-                return;
-
-            parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
-            {
-                RoutedEvent = MouseWheelEvent,
-                Source = parent
-            });
         }
     }
 }

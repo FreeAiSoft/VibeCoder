@@ -219,6 +219,7 @@ namespace VibeCoder.Core.Services
                 {
                     response = await _http.SendAsync(
                         BuildRequest(messages, systemPrompt, tools, stream: true),
+                        HttpCompletionOption.ResponseHeadersRead,
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)

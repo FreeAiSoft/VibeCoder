@@ -103,6 +103,9 @@ namespace VibeCoder
         private readonly ObservableCollection<ChatConversation> _conversations = new ObservableCollection<ChatConversation>();
         private ChatConversation _currentConversation = new ChatConversation();
         private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
+        private readonly DispatcherTimer _reasoningFlushTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        private readonly StringBuilder _reasoningBuffer = new StringBuilder();
+        private ChatMessage? _currentThinking;
         private bool _loadingHistory;
         private ChatViewMode _chatViewMode = ChatViewMode.Conversation;
         // Starts true so XAML load events (e.g. ModeToggle ValueChanged) don't
@@ -165,7 +168,7 @@ namespace VibeCoder
                 new ChatMessage { Kind = ChatMessageKind.AgentText, Text = "Here is the plan:\n\n- Add a null guard in `Parse()`\n- Add a regression test" },
                 new ChatMessage { Kind = ChatMessageKind.ResultAnswerPlan, Text = "## Plan\n\n1. Investigate\n2. Patch the parser\n3. Run tests" },
                 new ChatMessage { Kind = ChatMessageKind.ResultAnswerAct, Text = "Done. Applied the fix and ran the tests — all green." },
-                new ChatMessage { Kind = ChatMessageKind.ToolCall, Payload = new ToolCallPayload { ToolName = "read_file", Result = "…contents of Parser.cs…" } },
+                new ChatMessage { Kind = ChatMessageKind.ToolCall, Payload = new ToolCallPayload { ToolName = "read_files", Result = "read_files:\nParser.cs\nLexer.cs" } },
                 new ChatMessage { Kind = ChatMessageKind.ToolBlocked, Payload = new ToolCallPayload { ToolName = "write_file", Blocked = true } },
                 new ChatMessage { Kind = ChatMessageKind.Error, Text = "Request failed: 429 rate limit exceeded." },
                 new ChatMessage { Kind = ChatMessageKind.SystemNotice, Text = "Connected to OpenAI-compatible provider." },
@@ -390,6 +393,21 @@ namespace VibeCoder
             }
             ScheduleHistorySave();
             _questionTcs.TrySetResult(SkipAnswerText);
+        }
+
+        /// <summary>
+        /// Treats typed chat text as the free-form answer to the active question, ignoring the
+        /// option buttons. Resolves the pending ask_question task so the agent continues with
+        /// this exact text.
+        /// </summary>
+        private void AnswerActiveQuestion(string text)
+        {
+            if (_questionTcs == null) return;
+            if (string.IsNullOrEmpty(text)) return;
+            if (_activeQuestion?.Payload is QuestionPayload q)
+                q.Answer = text;
+            ScheduleHistorySave();
+            _questionTcs.TrySetResult(text);
         }
 
         private void AppendExtensionError(Exception ex)
@@ -1453,6 +1471,29 @@ namespace VibeCoder
             var text = InputBox.Text.Trim();
             var attachments = _attachments.ToList();
             if (text.Length == 0 && attachments.Count == 0) return;
+
+            var action = ChatSendRouter.Decide(
+                agentBusy: _chatCts != null,
+                hasActiveQuestion: _questionTcs != null,
+                hasText: text.Length > 0);
+
+            if (action == ChatSendAction.AnswerQuestion)
+            {
+                InputBox.Clear();
+                _attachments.Clear();
+                UpdateAttachmentsVisibility();
+                AnswerActiveQuestion(text);
+                return;
+            }
+
+            if (action == ChatSendAction.Drop)
+            {
+                // The agent is still processing a previous request and there is no active
+                // question to answer. Keep the typed text instead of silently dropping it.
+                AppendChat("The agent is busy — the message was placed into the input box.");
+                return;
+            }
+
             InputBox.Clear();
             _attachments.Clear();
             UpdateAttachmentsVisibility();
@@ -1737,8 +1778,10 @@ namespace VibeCoder
             if (string.IsNullOrEmpty(_currentConversation.Title))
                 _currentConversation.Title = BuildChatTitle(uiText);
 
-            var thinking = new ChatMessage { Kind = ChatMessageKind.AgentText, Mode = modeName, IsThinking = true, IsPartial = true, Text = "Thinking…" };
-            AppendChatMessage(thinking);
+            // Reasoning blocks are created per model turn by OnAgentTurnStarted.
+            _currentThinking = null;
+            _reasoningBuffer.Clear();
+            _reasoningFlushTimer.Stop();
 
             var cts = new CancellationTokenSource();
             _chatCts = cts;
@@ -1749,29 +1792,37 @@ namespace VibeCoder
                 var progress = new Progress<ChatStreamDelta>(delta =>
                 {
                     if (!string.IsNullOrEmpty(delta.ReasoningDelta))
-                        thinking.Reasoning += delta.ReasoningDelta;
+                    {
+                        _reasoningBuffer.Append(delta.ReasoningDelta);
+                        _reasoningFlushTimer.Stop();
+                        _reasoningFlushTimer.Start();
+                    }
                 });
                 var result = await _agentRunner.RunAsync(history, promptText, images, _mode, BuildContextBudget(), cts.Token, progress);
 
-                // Finalize the "Thinking…" placeholder in place: it keeps its streamed
-                // reasoning (so the thoughts stay visible) and the final answer is appended
-                // as a NEW message after any tool calls.
-                thinking.IsThinking = false;
-                thinking.IsPartial = false;
-
-                // Fall back to the result's reasoning when nothing was streamed.
-                if (string.IsNullOrWhiteSpace(thinking.Reasoning) && !string.IsNullOrWhiteSpace(result.Reasoning))
-                    thinking.Reasoning = result.Reasoning;
-
-                if (thinking.HasReasoning)
+                // Finalize the current turn's "Thinking…" placeholder in place: it keeps its
+                // streamed reasoning and the final answer is appended as a NEW message below.
+                FlushReasoningNow();
+                var thinking = _currentThinking;
+                if (thinking != null)
                 {
-                    // Keep the placeholder as a reasoning-only block above the tool calls.
-                    thinking.Text = string.Empty;
-                }
-                else
-                {
-                    // No reasoning to show — drop the empty placeholder.
-                    _messages.Remove(thinking);
+                    thinking.IsThinking = false;
+                    thinking.IsPartial = false;
+
+                    // Fall back to the result's reasoning when nothing was streamed.
+                    if (string.IsNullOrWhiteSpace(thinking.Reasoning) && !string.IsNullOrWhiteSpace(result.Reasoning))
+                        thinking.Reasoning = result.Reasoning;
+
+                    if (thinking.HasReasoning)
+                    {
+                        // Keep the placeholder as a reasoning-only block above the tool calls.
+                        thinking.Text = string.Empty;
+                    }
+                    else
+                    {
+                        // No reasoning to show — drop the empty placeholder.
+                        _messages.Remove(thinking);
+                    }
                 }
 
                 // Emit the final answer as a new message so it appears after the tool calls.
@@ -1790,21 +1841,27 @@ namespace VibeCoder
             }
             catch (OperationCanceledException)
             {
-                thinking.IsThinking = false;
-                if (_messages.Contains(thinking))
+                FlushReasoningNow();
+                var cancelledThinking = _currentThinking;
+                if (cancelledThinking != null)
+                    cancelledThinking.IsThinking = false;
+                if (cancelledThinking != null && _messages.Contains(cancelledThinking))
                     AppendChat("Request cancelled.");
                 StopChatStatus();
                 LogService.ChatInfo("Agent chat request cancelled.");
             }
             catch (Exception ex)
             {
-                thinking.IsThinking = false;
+                FlushReasoningNow();
+                if (_currentThinking != null)
+                    _currentThinking.IsThinking = false;
                 AppendExtensionError(ex);
                 ShowChatStatusError(ex.Message);
                 LogService.ChatError(ex, "Agent chat request failed.");
             }
             finally
             {
+                _reasoningFlushTimer.Stop();
                 _chatCts = null;
                 cts.Dispose();
             }
@@ -1990,6 +2047,7 @@ namespace VibeCoder
                 _agentRunner.ToolExecuted -= OnAgentToolExecuted;
                 _agentRunner.ContextCompacted -= OnAgentContextCompacted;
                 _agentRunner.RetryOccurred -= OnAgentRetryOccurred;
+                _agentRunner.TurnStarted -= OnAgentTurnStarted;
             }
             var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
                 ? ToolCallingMode.Native
@@ -1999,6 +2057,7 @@ namespace VibeCoder
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
+            _agentRunner.TurnStarted += OnAgentTurnStarted;
             UpdateMemoryBankUi();
         }
 
@@ -2247,7 +2306,58 @@ namespace VibeCoder
                 return; // The interactive question message already shows the Q&A.
             if (string.Equals(e.ToolName, "spawn_agent", StringComparison.OrdinalIgnoreCase))
                 return; // The sub-agent status card already shows progress and the final report.
-            AppendToolCall(e.ToolName, detail, e.Blocked);
+            var displayText = e.Blocked
+                ? detail
+                : ToolCallDisplayFormatter.Format(e.ToolName ?? "", e.Arguments, e.Result, e.DisplayResult);
+            AppendToolCall(e.ToolName, displayText, e.Blocked);
+        }
+
+        private void OnAgentTurnStarted(object? sender, EventArgs e)
+        {
+            if (_chatCts == null)
+                return; // no active chat run — ignore stale/stray turn signals
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnAgentTurnStarted(sender, e)));
+                return;
+            }
+
+            // Close out the previous turn's reasoning block before starting a new one.
+            FlushReasoningNow();
+            var prev = _currentThinking;
+            if (prev != null)
+            {
+                prev.IsThinking = false;
+                prev.IsPartial = false;
+                if (prev.HasReasoning)
+                    prev.Text = string.Empty;   // keep as a reasoning-only block
+                else
+                    _messages.Remove(prev);     // nothing to show — drop the placeholder
+            }
+
+            var thinking = new ChatMessage
+            {
+                Kind = ChatMessageKind.AgentText,
+                Mode = _mode.ToString(),
+                IsThinking = true,
+                IsPartial = true,
+                Text = "Thinking…"
+            };
+            _currentThinking = thinking;
+            _reasoningBuffer.Clear();
+            AppendChatMessage(thinking);
+        }
+
+        private void FlushReasoningNow()
+        {
+            _reasoningFlushTimer.Stop();
+            if (_currentThinking != null && _reasoningBuffer.Length > 0)
+                _currentThinking.Reasoning = _reasoningBuffer.ToString();
+        }
+
+        private void OnReasoningFlushTick(object? sender, EventArgs e)
+        {
+            FlushReasoningNow();
         }
 
         // ------------------------------------------------------------------
@@ -2257,6 +2367,7 @@ namespace VibeCoder
         private void InitializeChatHistory()
         {
             _historySaveTimer.Tick += OnHistorySaveTick;
+            _reasoningFlushTimer.Tick += OnReasoningFlushTick;
             this.Unloaded += OnWindowUnloaded;
 
             try
@@ -2390,6 +2501,7 @@ namespace VibeCoder
             // mode change, conversation open). Persisting again here would re-save whatever
             // transient state the window is in during teardown and can clobber an explicitly
             // chosen "History" view back to "Conversation".
+            _reasoningFlushTimer.Stop();
             SaveHistoryNow();
         }
 

@@ -66,6 +66,7 @@ namespace VibeCoder
                     _answer = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IsAnswered));
+                    OnPropertyChanged(nameof(HasFreeTextAnswer));
                 }
             }
         }
@@ -83,7 +84,33 @@ namespace VibeCoder
                 {
                     _isSkipped = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasFreeTextAnswer));
                 }
+            }
+        }
+
+        /// <summary>
+        /// True when the question was answered with free-form text (not one of the options and
+        /// not skipped). Used to show the typed answer in the question card.
+        /// </summary>
+        public bool HasFreeTextAnswer
+        {
+            get
+            {
+                if (!IsAnswered || IsSkipped || string.IsNullOrEmpty(Answer))
+                    return false;
+
+                var options = Options;
+                if (options != null)
+                {
+                    for (var i = 0; i < options.Count; i++)
+                    {
+                        if (string.Equals(options[i], Answer, StringComparison.Ordinal))
+                            return false;
+                    }
+                }
+
+                return true;
             }
         }
 

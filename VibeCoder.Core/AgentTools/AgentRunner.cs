@@ -19,6 +19,7 @@ namespace VibeCoder.Core.AgentTools
         /// <summary>Short text for the chat progress line (e.g. a file path). Empty means use <see cref="Result"/>.</summary>
         public string DisplayResult { get; set; } = "";
         public bool Blocked { get; set; }
+        public JObject Arguments { get; set; } = new JObject();
     }
 
     /// <summary>Result of an agent run: final text and whether any tool was blocked.</summary>
@@ -76,6 +77,9 @@ namespace VibeCoder.Core.AgentTools
 
         /// <summary>Raised for every recovery retry (overflow compact or max-tokens nudge).</summary>
         public event EventHandler<AgentRetryArgs> RetryOccurred;
+
+        /// <summary>Raised at the start of each model turn, so the UI can start a fresh reasoning block.</summary>
+        public event EventHandler TurnStarted;
 
         /// <summary>Backward-compatible constructor: a fixed iteration cap with default budget thresholds.</summary>
         public AgentRunner(
@@ -307,6 +311,7 @@ namespace VibeCoder.Core.AgentTools
             CancellationToken cancellationToken,
             IProgress<ChatStreamDelta> progress)
         {
+            TurnStarted?.Invoke(this, EventArgs.Empty);
             if (_ai is IStreamingAiProvider streaming)
                 return await streaming.ChatStreamingAsync(prepared.Messages, prepared.SystemPrompt, tools, progress, cancellationToken).ConfigureAwait(false);
 
@@ -393,7 +398,8 @@ namespace VibeCoder.Core.AgentTools
                 ToolName = tool.Name,
                 Result = truncated,
                 DisplayResult = string.IsNullOrWhiteSpace(displayText) ? "" : displayText,
-                Blocked = false
+                Blocked = false,
+                Arguments = args
             });
 
             messages.Add(new ChatMessageData
@@ -480,7 +486,8 @@ namespace VibeCoder.Core.AgentTools
                 ToolName = tool.Name,
                 Result = truncated,
                 DisplayResult = string.IsNullOrWhiteSpace(displayText) ? "" : displayText,
-                Blocked = false
+                Blocked = false,
+                Arguments = call.Arguments ?? new JObject()
             });
 
             var toolRole = budget.UseToolRole ? "tool" : "user";
