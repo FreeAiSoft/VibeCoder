@@ -1,5 +1,5 @@
 using NUnit.Framework;
-using VibeCoder.Core.Services;
+using Agent.Core.Services;
 
 namespace VibeCoder.Tests
 {

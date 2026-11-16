@@ -1,6 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:core="clr-namespace:VibeCoder.Core.Services;assembly=VibeCoder.Core"
+                    xmlns:core="clr-namespace:Agent.Core.Services;assembly=Agent.Core"
                     xmlns:conv="clr-namespace:VibeCoder.Converters"
                     xmlns:controls="clr-namespace:VibeCoder.Controls.Messages">
 

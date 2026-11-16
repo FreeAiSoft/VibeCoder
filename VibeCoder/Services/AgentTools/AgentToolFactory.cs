@@ -12,10 +12,10 @@ using Newtonsoft.Json.Linq;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
-using VibeCoder.Core.AgentTools;
-using VibeCoder.Core.Contracts;
-using VibeCoder.Core.Models;
-using VibeCoder.Core.Services;
+using Agent.Core.AgentTools;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
 
 namespace VibeCoder.Services.AgentTools
 {

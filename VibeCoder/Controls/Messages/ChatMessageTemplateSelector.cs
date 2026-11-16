@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
-using VibeCoder.Core.Models;
+using Agent.Core.Models;
+using Agent.Core.Services;
 using VibeCoder.Core.Services;
 
 namespace VibeCoder.Controls.Messages

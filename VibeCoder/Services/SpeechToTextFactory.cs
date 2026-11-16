@@ -1,5 +1,6 @@
 using System;
-using VibeCoder.Core.Contracts;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
 using VibeCoder.Core.Services;
 
 namespace VibeCoder.Services

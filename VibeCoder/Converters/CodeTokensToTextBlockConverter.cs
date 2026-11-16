@@ -6,7 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Media;
-using VibeCoder.Core.Services;
+using Agent.Core.Services;
 
 namespace VibeCoder.Converters
 {

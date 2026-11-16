@@ -4,8 +4,8 @@ using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
-using VibeCoder.Core.Models;
-using VibeCoder.Core.Services;
+using Agent.Core.Models;
+using Agent.Core.Services;
 using VibeCoder.Services;
 
 namespace VibeCoder
@@ -117,7 +117,7 @@ namespace VibeCoder
         {
             try
             {
-                return SettingsStore.Load().AutoCaptureRuntimeExceptions;
+                return VibeCoder.Services.SettingsStore.Load().AutoCaptureRuntimeExceptions;
             }
             catch
             {

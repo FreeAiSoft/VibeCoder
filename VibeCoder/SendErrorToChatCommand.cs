@@ -8,8 +8,8 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Shell.TableControl;
 using Microsoft.VisualStudio.Shell.TableManager;
-using VibeCoder.Core.Models;
-using VibeCoder.Core.Services;
+using Agent.Core.Models;
+using Agent.Core.Services;
 using VibeCoder.Services;
 
 namespace VibeCoder

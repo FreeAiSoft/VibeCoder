@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using VibeCoder.Core.Models;
 
 namespace VibeCoder.Core.Services
 {

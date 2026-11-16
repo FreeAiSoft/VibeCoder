@@ -1,5 +1,5 @@
 using System;
-using VibeCoder.Core.Models;
+using Agent.Core.Models;
 
 namespace VibeCoder.Core.Services
 {
@@ -26,8 +26,10 @@ namespace VibeCoder.Core.Services
                 case ChatMessageKind.ModeSwitch: return "ModeSwitch";
                 case ChatMessageKind.DiffEdit: return "DiffEdit";
                 case ChatMessageKind.Question: return "Question";
+                case ChatMessageKind.Approval: return "AgentText";
                 case ChatMessageKind.Subagent: return "Subagent";
                 case ChatMessageKind.Checkpoint: return "Checkpoint";
+                case ChatMessageKind.Diff: return "DiffEdit";
                 default: throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
             }
         }

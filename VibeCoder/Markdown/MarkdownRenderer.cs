@@ -12,7 +12,7 @@ using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
-using VibeCoder.Core.Services;
+using Agent.Core.Services;
 using VibeCoder.Controls;
 using VibeCoder.Converters;
 

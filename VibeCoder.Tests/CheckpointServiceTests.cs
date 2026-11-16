@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using VibeCoder.Core.Checkpoints;
+using Agent.Core.Checkpoints;
 
 namespace VibeCoder.Tests
 {

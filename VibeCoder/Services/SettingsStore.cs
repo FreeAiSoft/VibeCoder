@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
+using Agent.Core.Services;
 using VibeCoder.Core.Services;
 
 namespace VibeCoder.Services
@@ -153,14 +154,6 @@ namespace VibeCoder.Services
         /// <summary>Resolved secondary color (hex, e.g. "#625B71").</summary>
         public string SecondaryHex { get; set; } = "#625B71";
 
-        /// <summary>Seed hue for the MD3 dynamic color slider (0..360).</summary>
-        public double SeedHue { get; set; } = 256;
-
-        /// <summary>MD3 variant used by the dynamic color generator.</summary>
-        public string Variant { get; set; } = "Neutral";
-
-        /// <summary>Contrast level for the dynamic color generator (0..1).</summary>
-        public double Contrast { get; set; } = 0.5;
     }
 
     /// <summary>Loads/saves settings at %AppData%\VibeCoder\settings.json.</summary>
@@ -256,13 +249,6 @@ namespace VibeCoder.Services
                 settings.PrimaryHex = "#6750A4";
             if (!ThemeColorMath.TryParseHex(settings.SecondaryHex, out _, out _, out _))
                 settings.SecondaryHex = "#625B71";
-            if (double.IsNaN(settings.SeedHue))
-                settings.SeedHue = 256;
-            settings.SeedHue = ((settings.SeedHue % 360.0) + 360.0) % 360.0;
-            if (string.IsNullOrWhiteSpace(settings.Variant))
-                settings.Variant = "Neutral";
-            if (double.IsNaN(settings.Contrast) || settings.Contrast < 0 || settings.Contrast > 1)
-                settings.Contrast = 0.5;
             if (settings.ProxyPort <= 0 || settings.ProxyPort > 65535)
                 settings.ProxyPort = 8080;
         }

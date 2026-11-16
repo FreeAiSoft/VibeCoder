@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
-using VibeCoder.Core.Models;
+using Agent.Core.Models;
 
 namespace VibeCoder.Services
 {

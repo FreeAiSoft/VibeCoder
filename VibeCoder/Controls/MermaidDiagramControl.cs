@@ -10,7 +10,7 @@ using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Newtonsoft.Json;
-using VibeCoder.Core.Services;
+using Agent.Core.Services;
 using VibeCoder.Services;
 
 namespace VibeCoder.Controls

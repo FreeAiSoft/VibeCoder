@@ -9,9 +9,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using VibeCoder.Core.Contracts;
-using VibeCoder.Core.Models;
-using VibeCoder.Core.Services;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
+using Agent.Core.Services;
 
 namespace VibeCoder.Tests
 {
@@ -221,6 +221,7 @@ namespace VibeCoder.Tests
             var provider = new OpenAiCompatibleProvider(new OpenAiOptions
             {
                 ApiKey = "sk-test",
+                NoRetryOn4xx = false,
                 RetryTimeout = TimeSpan.FromMilliseconds(150),
                 RetryBaseDelay = TimeSpan.FromMilliseconds(10),
                 RetryMaxDelay = TimeSpan.FromMilliseconds(10)

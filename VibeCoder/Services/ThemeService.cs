@@ -3,15 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
-using MaterialColorUtilities;
 using MaterialDesignThemes.Wpf;
+using Agent.Core.Services;
 using VibeCoder.Core.Services;
 
 namespace VibeCoder.Services
 {
     /// <summary>
     /// Applies the Material Design theme at runtime: base theme (dark/light),
-    /// primary/secondary colors (MD3 dynamic color or presets) and the chrome brushes.
+    /// primary/secondary colors (presets) and the chrome brushes.
     /// Operates on the UserControl's resource dictionary (not Application.Current), because
     /// the theme lives in VibeCoderToolWindowControl.Resources inside the VSIX.
     /// </summary>
@@ -66,19 +66,6 @@ namespace VibeCoder.Services
         public static bool IsDark(string baseTheme) =>
             !string.Equals(baseTheme, "Light", StringComparison.OrdinalIgnoreCase);
 
-        public static Variant ParseVariant(string name)
-        {
-            if (Enum.TryParse(name, true, out Variant variant)) return variant;
-            return Variant.Neutral;
-        }
-
-        public static double ClampContrast(double contrast)
-        {
-            if (double.IsNaN(contrast) || contrast < 0) return 0;
-            if (contrast > 1) return 1;
-            return contrast;
-        }
-
         public static Color ColorFromHex(string hex)
         {
             if (ThemeColorMath.TryParseHex(hex, out byte r, out byte g, out byte b))
@@ -126,25 +113,6 @@ namespace VibeCoder.Services
             bundled.SetTheme(theme);
         }
 
-        /// <summary>
-        /// Generates a full MD3 tonal scheme from a seed color and returns the resolved
-        /// primary/secondary colors (the two roles the toolkit's Theme can represent).
-        /// </summary>
-        public (Color Primary, Color Secondary) ResolveDynamicScheme(Color seed, Variant variant, bool isDark, double contrast)
-        {
-            var scheme = DynamicSchemeFactory.Create(
-                seed,
-                variant,
-                isDark,
-                ClampContrast(contrast),
-                Platform.Phone,
-                SpecVersion.Spec2025,
-                null, null, null, null, null, null);
-
-            var dynamicColors = new MaterialDynamicColors();
-            return (dynamicColors.Primary.GetColor(scheme), dynamicColors.Secondary.GetColor(scheme));
-        }
-
         public void ApplyResolvedTheme(bool isDark, Color primary, Color secondary)
         {
             var bundled = GetBundledTheme();
@@ -157,10 +125,5 @@ namespace VibeCoder.Services
             bundled.SetTheme(theme);
         }
 
-        public void ApplyDynamicScheme(Color seed, Variant variant, bool isDark, double contrast)
-        {
-            var (primary, secondary) = ResolveDynamicScheme(seed, variant, isDark, contrast);
-            ApplyResolvedTheme(isDark, primary, secondary);
-        }
     }
 }

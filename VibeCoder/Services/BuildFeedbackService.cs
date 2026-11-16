@@ -7,8 +7,8 @@ using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
-using VibeCoder.Core.Contracts;
-using VibeCoder.Core.Models;
+using Agent.Core.Contracts;
+using Agent.Core.Models;
 
 namespace VibeCoder.Services
 {
@@ -34,6 +34,29 @@ namespace VibeCoder.Services
             try
             {
                 build?.Build(true);
+            }
+            finally
+            {
+                // Always switch the solution back to Debug after a build.
+                build?.SolutionConfigurations?.Item("Debug")?.Activate();
+            }
+        }
+
+        public async Task BuildProjectAsync(string configuration, string projectName, CancellationToken cancellationToken = default)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+            var dte = Package.GetGlobalService(typeof(SDTE)) as DTE2;
+            if (dte?.Solution == null || !dte.Solution.IsOpen)
+                throw new InvalidOperationException("No open solution.");
+
+            var build = dte.Solution.SolutionBuild;
+            build?.SolutionConfigurations?.Item(configuration)?.Activate();
+            try
+            {
+                if (string.IsNullOrWhiteSpace(projectName))
+                    build?.Build(true);
+                else
+                    build?.BuildProject(configuration, projectName, WaitForBuildToFinish: true);
             }
             finally
             {

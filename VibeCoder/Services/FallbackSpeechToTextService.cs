@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using VibeCoder.Core.Contracts;
+using Agent.Core.Contracts;
 
 namespace VibeCoder.Services
 {

@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using VibeCoder.Controls.Messages;
+using Agent.Core.Models;
 
 namespace VibeCoder.Controls
 {

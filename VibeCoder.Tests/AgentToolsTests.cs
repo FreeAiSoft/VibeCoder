@@ -5,9 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
-using VibeCoder.Core.AgentTools;
-using VibeCoder.Core.Models;
-using VibeCoder.Core.Services;
+using Agent.Core.AgentTools;
+using Agent.Core.Models;
+using Agent.Core.Services;
 
 namespace VibeCoder.Tests
 {
@@ -339,7 +339,7 @@ namespace VibeCoder.Tests
         }
 
         [Test]
-        public async Task RunAsync_TwoTurns_RaisesTurnStartedPerTurn_AndStreamsReasoningPerTurn()
+        public async Task RunAsync_TwoTurns_StreamsReasoningPerTurn()
         {
             var registry = new AgentToolRegistry();
             registry.Register(new AgentTool("my_tool", "test tool", "{}", mutates: false, (a, c) => Task.FromResult("tool-result")));
@@ -357,14 +357,11 @@ namespace VibeCoder.Tests
             var provider = new OpenAiCompatibleProvider(new OpenAiOptions { ApiKey = "sk-test", Model = "test-model" }, new HttpClient(handler));
 
             var runner = new AgentRunner(provider, registry, mode => "SYSTEM", maxIterations: 4);
-            var turnCount = 0;
-            runner.TurnStarted += (s, e) => System.Threading.Interlocked.Increment(ref turnCount);
 
             var progress = new SyncProgress<ChatStreamDelta>();
             var result = await runner.RunAsync("go", AgentMode.Act, CancellationToken.None, progress);
 
             Assert.That(result.FinalText, Is.EqualTo("done"));
-            Assert.That(turnCount, Is.EqualTo(2));
 
             var reasoningParts = new List<string>();
             foreach (var d in progress.Reported)

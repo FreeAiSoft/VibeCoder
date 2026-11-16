@@ -5,10 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
-using VibeCoder.Core.AgentTools;
-using VibeCoder.Core.Context;
-using VibeCoder.Core.Models;
-using VibeCoder.Core.Services;
+using Agent.Core.AgentTools;
+using Agent.Core.Context;
+using Agent.Core.Models;
+using Agent.Core.Services;
 
 namespace VibeCoder.Tests
 {

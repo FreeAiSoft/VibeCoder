@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
-using VibeCoder.Core.Services;
+using Agent.Core.Services;
 
 namespace VibeCoder
 {

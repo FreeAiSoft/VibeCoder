@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,11 +8,11 @@ using System;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows.Data;
-using VibeCoder.Core.AgentTools;
-using VibeCoder.Core.Checkpoints;
-using VibeCoder.Core.Context;
-using VibeCoder.Core.Contracts;
-using VibeCoder.Core.Services;
+using Agent.Core.AgentTools;
+using Agent.Core.Checkpoints;
+using Agent.Core.Context;
+using Agent.Core.Contracts;
+using Agent.Core.Services;
 using VibeCoder.Services;
 using VibeCoder.Services.AgentTools;
 using VibeCoder.Services.Checkpoints;
@@ -33,9 +33,10 @@ using Microsoft.Win32;
 using System.IO;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using VibeCoder.Core.Models;
+using Agent.Core.Models;
 using MaterialDesignThemes.Wpf;
 using MaterialDesignColors;
+using VibeCoder.Core.Services;
 
 namespace VibeCoder
 {
@@ -52,7 +53,7 @@ namespace VibeCoder
             Error
         }
 
-        private SettingsData _settings;
+        private VibeCoder.Services.SettingsData _settings;
         private IAiProvider _ai;
         private IBuildFeedbackService _buildFeedback;
         private OutputWindowService _outputWindow;
@@ -100,14 +101,14 @@ namespace VibeCoder
         private const int CommitDiffMaxChars = 8000;
         private const int ErrorContextLines = 15;
         private const int MaxErrorsWithContext = 10;
-        private readonly ObservableCollection<ChatConversation> _conversations = new ObservableCollection<ChatConversation>();
-        private ChatConversation _currentConversation = new ChatConversation();
+        private readonly ObservableCollection<VibeCoder.Services.ChatConversation> _conversations = new ObservableCollection<VibeCoder.Services.ChatConversation>();
+        private VibeCoder.Services.ChatConversation _currentConversation = new VibeCoder.Services.ChatConversation();
         private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         private readonly DispatcherTimer _reasoningFlushTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         private readonly StringBuilder _reasoningBuffer = new StringBuilder();
         private ChatMessage? _currentThinking;
         private bool _loadingHistory;
-        private ChatViewMode _chatViewMode = ChatViewMode.Conversation;
+        private VibeCoder.Services.ChatViewMode _chatViewMode = VibeCoder.Services.ChatViewMode.Conversation;
         // Starts true so XAML load events (e.g. ModeToggle ValueChanged) don't
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
@@ -229,7 +230,7 @@ namespace VibeCoder
 
         private void LoadSettings()
         {
-            _settings = SettingsStore.Load();
+            _settings = VibeCoder.Services.SettingsStore.Load();
             BaseUrlBox.Text = string.IsNullOrWhiteSpace(_settings.BaseUrl) ? "https://api.openai.com/v1" : _settings.BaseUrl;
             ApiKeyBox.Password = _settings.ApiKey ?? "";
             ModelBox.Text = string.IsNullOrWhiteSpace(_settings.Model) ? "gpt-4o-mini" : _settings.Model;
@@ -275,13 +276,7 @@ namespace VibeCoder
 
             _suppressThemeEvents = true;
             DarkThemeToggle.IsChecked = ThemeService.IsDark(_settings.BaseTheme);
-            SeedHueSlider.Value = _settings.SeedHue;
-            ThemeVariantCombo.SelectedIndex = VariantToIndex(_settings.Variant);
-            ThemeContrastSlider.Value = _settings.Contrast;
             _suppressThemeEvents = false;
-            UpdateSeedHueLabel();
-            UpdateContrastLabel();
-            UpdateSeedPreview();
         }
 
         private void OnTemperatureChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -301,7 +296,7 @@ namespace VibeCoder
             UnhookMessageNotifier();
             UnhookRetryNotifier();
             UnhookPromptNotifier();
-            _ai = AiProviderFactory.Create(_settings);
+            _ai = VibeCoder.Services.AiProviderFactory.Create(_settings);
             LogService.Info("AI provider recreated: " + (_ai == null ? "null" : _ai.GetType().Name));
             HookTokenUsage();
             HookMessageNotifier();
@@ -2047,7 +2042,6 @@ namespace VibeCoder
                 _agentRunner.ToolExecuted -= OnAgentToolExecuted;
                 _agentRunner.ContextCompacted -= OnAgentContextCompacted;
                 _agentRunner.RetryOccurred -= OnAgentRetryOccurred;
-                _agentRunner.TurnStarted -= OnAgentTurnStarted;
             }
             var toolCallingMode = string.Equals(_settings?.ToolCallingMode, "Native", StringComparison.OrdinalIgnoreCase)
                 ? ToolCallingMode.Native
@@ -2057,7 +2051,6 @@ namespace VibeCoder
             _agentRunner.ToolExecuted += OnAgentToolExecuted;
             _agentRunner.ContextCompacted += OnAgentContextCompacted;
             _agentRunner.RetryOccurred += OnAgentRetryOccurred;
-            _agentRunner.TurnStarted += OnAgentTurnStarted;
             UpdateMemoryBankUi();
         }
 
@@ -2237,7 +2230,7 @@ namespace VibeCoder
             _settings.AllowExecuteCommand = AllowExecuteCommandSwitch?.IsChecked ?? false;
             _settings.AllowWebFetch = AllowWebFetchSwitch?.IsChecked ?? false;
             _settings.AllowMcp = AllowMcpSwitch?.IsChecked ?? false;
-            SettingsStore.Save(_settings);
+            VibeCoder.Services.SettingsStore.Save(_settings);
             RebuildAgentTools();
         }
 
@@ -2308,7 +2301,7 @@ namespace VibeCoder
                 return; // The sub-agent status card already shows progress and the final report.
             var displayText = e.Blocked
                 ? detail
-                : ToolCallDisplayFormatter.Format(e.ToolName ?? "", e.Arguments, e.Result, e.DisplayResult);
+                : ToolCallDisplayFormatter.Format(e.ToolName ?? "", null, e.Result, e.DisplayResult);
             AppendToolCall(e.ToolName, displayText, e.Blocked);
         }
 
@@ -2399,7 +2392,7 @@ namespace VibeCoder
 
                 SelectTabByHeader(state.ActiveTab);
 
-                if (state.ChatViewMode == ChatViewMode.History)
+                if (state.ChatViewMode == VibeCoder.Services.ChatViewMode.History)
                 {
                     ShowHistoryView();
                 }
@@ -2419,7 +2412,7 @@ namespace VibeCoder
             }
         }
 
-        private ChatConversation? ResolveConversationToOpen(string id)
+        private VibeCoder.Services.ChatConversation? ResolveConversationToOpen(string id)
         {
             if (!string.IsNullOrWhiteSpace(id))
             {
@@ -2438,26 +2431,26 @@ namespace VibeCoder
             return _conversations.FirstOrDefault();
         }
 
-        private static string MainTabToHeader(MainTab tab)
+        private static string MainTabToHeader(VibeCoder.Services.MainTab tab)
         {
             switch (tab)
             {
-                case MainTab.Settings: return "Settings";
+                case VibeCoder.Services.MainTab.Settings: return "Settings";
                 default: return "Chat";
             }
         }
 
-        private static MainTab HeaderToMainTab(string? header)
+        private static VibeCoder.Services.MainTab HeaderToMainTab(string? header)
         {
             if (string.IsNullOrWhiteSpace(header))
-                return MainTab.Chat;
+                return VibeCoder.Services.MainTab.Chat;
 
             var value = header.Trim();
-            if (string.Equals(value, "Settings", StringComparison.OrdinalIgnoreCase)) return MainTab.Settings;
-            return MainTab.Chat;
+            if (string.Equals(value, "Settings", StringComparison.OrdinalIgnoreCase)) return VibeCoder.Services.MainTab.Settings;
+            return VibeCoder.Services.MainTab.Chat;
         }
 
-        private void SelectTabByHeader(MainTab tab)
+        private void SelectTabByHeader(VibeCoder.Services.MainTab tab)
         {
             var header = MainTabToHeader(tab);
 
@@ -2486,7 +2479,7 @@ namespace VibeCoder
             if (_restoringUiState)
                 return;
 
-            UiStateStore.Save(new UiStateData
+            UiStateStore.Save(new VibeCoder.Services.UiStateData
             {
                 ChatViewMode = _chatViewMode,
                 LastConversationId = _currentConversation?.Id ?? "",
@@ -2554,7 +2547,7 @@ namespace VibeCoder
             try
             {
                 _messages.Clear();
-                _currentConversation = new ChatConversation
+                _currentConversation = new VibeCoder.Services.ChatConversation
                 {
                     Id = Guid.NewGuid().ToString("N"),
                     CreatedAtUtc = DateTime.UtcNow,
@@ -2581,7 +2574,7 @@ namespace VibeCoder
             _chatCts?.Cancel();
             SaveHistoryNow();
 
-            ChatConversation? stored;
+            VibeCoder.Services.ChatConversation? stored;
             try
             {
                 stored = ChatHistoryStore.LoadConversation(id);
@@ -2633,14 +2626,14 @@ namespace VibeCoder
 
         private void ShowConversationView()
         {
-            _chatViewMode = ChatViewMode.Conversation;
+            _chatViewMode = VibeCoder.Services.ChatViewMode.Conversation;
             ApplyChatViewMode();
             PersistUiState();
         }
 
         private void ShowHistoryView()
         {
-            _chatViewMode = ChatViewMode.History;
+            _chatViewMode = VibeCoder.Services.ChatViewMode.History;
             RefreshHistoryList();
             ApplyChatViewMode();
             PersistUiState();
@@ -2648,7 +2641,7 @@ namespace VibeCoder
 
         private void ApplyChatViewMode()
         {
-            var conversation = _chatViewMode == ChatViewMode.Conversation;
+            var conversation = _chatViewMode == VibeCoder.Services.ChatViewMode.Conversation;
             ChatToolbarPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatListContainer.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatSplitter.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
@@ -2671,7 +2664,7 @@ namespace VibeCoder
 
         private void OnHistoryCardClick(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement { DataContext: ChatConversation conversation })
+            if (sender is FrameworkElement { DataContext: VibeCoder.Services.ChatConversation conversation })
             {
                 OpenConversation(conversation.Id);
                 ShowConversationView();
@@ -2680,7 +2673,7 @@ namespace VibeCoder
 
         private void OnDeleteHistoryCard(object sender, RoutedEventArgs e)
         {
-            if (!(sender is FrameworkElement { DataContext: ChatConversation conversation }))
+            if (!(sender is FrameworkElement { DataContext: VibeCoder.Services.ChatConversation conversation }))
                 return;
 
             var result = MessageDialog.Show(
@@ -2738,7 +2731,7 @@ namespace VibeCoder
             try
             {
                 _messages.Clear();
-                _currentConversation = new ChatConversation
+                _currentConversation = new VibeCoder.Services.ChatConversation
                 {
                     Id = Guid.NewGuid().ToString("N"),
                     CreatedAtUtc = DateTime.UtcNow,
@@ -2788,11 +2781,11 @@ namespace VibeCoder
             StartNewChat();
         }
 
-        private static ChatHistoryMessage ToHistoryMessage(ChatMessage message)
+        private static VibeCoder.Services.ChatHistoryMessage ToHistoryMessage(ChatMessage message)
         {
             if (message.Payload is QuestionPayload question)
             {
-                return new ChatHistoryMessage
+                return new VibeCoder.Services.ChatHistoryMessage
                 {
                     Kind = message.Kind,
                     Text = question.Question ?? "",
@@ -2804,7 +2797,7 @@ namespace VibeCoder
             }
 
             var tool = message.Payload as ToolCallPayload;
-            return new ChatHistoryMessage
+            return new VibeCoder.Services.ChatHistoryMessage
             {
                 Kind = message.Kind,
                 Text = tool != null ? tool.Result : message.Text,
@@ -2814,7 +2807,7 @@ namespace VibeCoder
             };
         }
 
-        private static ChatMessage FromHistoryMessage(ChatHistoryMessage m)
+        private static ChatMessage FromHistoryMessage(VibeCoder.Services.ChatHistoryMessage m)
         {
             if (m.Kind == ChatMessageKind.Question)
             {
@@ -2997,21 +2990,6 @@ namespace VibeCoder
                 ThemeService.ColorFromHex(_settings.SecondaryHex));
         }
 
-        private void ApplyDynamicFromSeed()
-        {
-            bool isDark = ThemeService.IsDark(_settings.BaseTheme);
-            string seedHex = ThemeColorMath.HueToSeedHex(_settings.SeedHue);
-            var (primary, secondary) = _themeService.ResolveDynamicScheme(
-                ThemeService.ColorFromHex(seedHex),
-                ThemeService.ParseVariant(_settings.Variant),
-                isDark,
-                _settings.Contrast);
-            _settings.PrimaryHex = ThemeService.ToHex(primary);
-            _settings.SecondaryHex = ThemeService.ToHex(secondary);
-            _themeService.ApplyResolvedTheme(isDark, primary, secondary);
-            UpdateSeedPreview();
-        }
-
         private void OnThemeModeChanged(object sender, RoutedEventArgs e)
         {
             if (_suppressThemeEvents) return;
@@ -3019,29 +2997,6 @@ namespace VibeCoder
             _settings.BaseTheme = isDark ? "Dark" : "Light";
             _themeService.ApplyChrome(isDark);
             _themeService.ApplyBaseTheme(isDark);
-        }
-
-        private void OnSeedHueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            UpdateSeedHueLabel();
-            if (_suppressThemeEvents) return;
-            _settings.SeedHue = SeedHueSlider.Value;
-            ApplyDynamicFromSeed();
-        }
-
-        private void OnThemeVariantChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_suppressThemeEvents) return;
-            _settings.Variant = IndexToVariant(ThemeVariantCombo.SelectedIndex);
-            ApplyDynamicFromSeed();
-        }
-
-        private void OnThemeContrastChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            UpdateContrastLabel();
-            if (_suppressThemeEvents) return;
-            _settings.Contrast = Math.Round(ThemeContrastSlider.Value, 2);
-            ApplyDynamicFromSeed();
         }
 
         private void OnThemeSwatchClick(object sender, MouseButtonEventArgs e)
@@ -3055,59 +3010,6 @@ namespace VibeCoder
             {
                 _settings.SecondaryHex = ThemeService.ToHex(secondary);
                 _themeService.ApplySecondary(secondary);
-            }
-        }
-
-        private void UpdateSeedHueLabel()
-        {
-            if (SeedHueValueText != null)
-                SeedHueValueText.Text = Math.Round(SeedHueSlider.Value).ToString(CultureInfo.InvariantCulture);
-        }
-
-        private void UpdateContrastLabel()
-        {
-            if (ThemeContrastValueText != null)
-                ThemeContrastValueText.Text = Math.Round(ThemeContrastSlider.Value, 2).ToString("0.00", CultureInfo.InvariantCulture);
-        }
-
-        private void UpdateSeedPreview()
-        {
-            if (SeedPreview == null) return;
-            string seedHex = ThemeColorMath.HueToSeedHex(SeedHueSlider.Value);
-            SeedPreview.Background = new SolidColorBrush(ThemeService.ColorFromHex(seedHex));
-        }
-
-        private static int VariantToIndex(string variant)
-        {
-            switch (variant)
-            {
-                case "Monochrome": return 0;
-                case "Neutral": return 1;
-                case "TonalSpot": return 2;
-                case "Vibrant": return 3;
-                case "Expressive": return 4;
-                case "Fidelity": return 5;
-                case "Content": return 6;
-                case "Rainbow": return 7;
-                case "FruitSalad": return 8;
-                default: return 1;
-            }
-        }
-
-        private static string IndexToVariant(int index)
-        {
-            switch (index)
-            {
-                case 0: return "Monochrome";
-                case 1: return "Neutral";
-                case 2: return "TonalSpot";
-                case 3: return "Vibrant";
-                case 4: return "Expressive";
-                case 5: return "Fidelity";
-                case 6: return "Content";
-                case 7: return "Rainbow";
-                case 8: return "FruitSalad";
-                default: return "Neutral";
             }
         }
 
@@ -3155,10 +3057,7 @@ namespace VibeCoder
             _settings.ProxyUsername = (ProxyUsernameBox?.Text ?? "").Trim();
             _settings.ProxyPassword = ProxyPasswordBox?.Password ?? "";
             _settings.BaseTheme = (DarkThemeToggle?.IsChecked == true) ? "Dark" : "Light";
-            _settings.SeedHue = SeedHueSlider?.Value ?? 256;
-            _settings.Variant = IndexToVariant(ThemeVariantCombo?.SelectedIndex ?? 1);
-            _settings.Contrast = Math.Round(ThemeContrastSlider?.Value ?? 0.5, 2);
-            SettingsStore.Save(_settings);
+            VibeCoder.Services.SettingsStore.Save(_settings);
             LogService.Configure(_settings.LogFilePath, _settings.ChatLogFilePath);
             RecreateAiProvider();
             _stt = SpeechToTextFactory.Create(_settings);

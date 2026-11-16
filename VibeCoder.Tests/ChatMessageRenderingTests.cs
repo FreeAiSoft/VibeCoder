@@ -1,6 +1,7 @@
 using System;
 using NUnit.Framework;
-using VibeCoder.Core.Models;
+using Agent.Core.Models;
+using Agent.Core.Services;
 using VibeCoder.Core.Services;
 
 namespace VibeCoder.Tests

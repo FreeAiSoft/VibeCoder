@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -16,6 +16,8 @@
     <ProjectCapability Include="CreateVsixContainer" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Agent.Core" Version="1.7.1" />
+
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
     <PackageReference Include="Markdig" Version="1.4.2" />
@@ -25,6 +27,7 @@
     <PackageReference Include="Vosk" Version="0.3.38" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <PackageReference Include="MaterialDesignThemes" Version="5.4.0" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />
@@ -39,9 +42,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\VibeCoder.Core\VibeCoder.Core.csproj" />
-    <ProjectReference Include="..\..\..\..\Desktop\MaterialDesignInXamlToolkit-master\src\MaterialDesignThemes.Wpf\MaterialDesignThemes.Wpf.csproj" />
-    <ProjectReference Include="..\..\..\..\Desktop\MaterialDesignInXamlToolkit-master\src\MaterialDesign3.MaterialColorUtilities\MaterialColorUtilities.csproj" />
   </ItemGroup>
+
   <ItemGroup>
     <!-- VSSDK excludes Newtonsoft.Json from the VSIX by default; force-include it
          because VibeCoder.Core.dll depends on it and VS does not resolve it for third-party extensions. -->
@@ -50,7 +52,7 @@
     <VSIXSourceItem Include="$(OutputPath)Markdig.dll" />
     <VSIXSourceItem Include="$(OutputPath)MaterialDesignThemes.Wpf.dll" />
     <VSIXSourceItem Include="$(OutputPath)MaterialDesignColors.dll" />
-    <VSIXSourceItem Include="$(OutputPath)MaterialColorUtilities.dll" />
+
     <VSIXSourceItem Include="$(OutputPath)Microsoft.Xaml.Behaviors.dll" />
     <!-- Markdig's transitive dependencies are not auto-packaged by VSSDK for SDK-style
          projects. Ship them explicitly, otherwise Markdig fails at runtime with

@@ -3,7 +3,7 @@ using System.IO;
 using System.Runtime.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using VibeCoder.Core.Models;
+using Agent.Core.Models;
 
 namespace VibeCoder.Services
 {

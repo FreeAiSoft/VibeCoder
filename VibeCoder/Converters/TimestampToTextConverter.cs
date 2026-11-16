@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Windows.Data;
+using Agent.Core.Services;
 using VibeCoder.Core.Services;
 
 namespace VibeCoder.Converters

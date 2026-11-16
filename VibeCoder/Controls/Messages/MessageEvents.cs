@@ -1,4 +1,5 @@
 using System.Windows;
+using Agent.Core.Models;
 
 namespace VibeCoder.Controls.Messages
 {

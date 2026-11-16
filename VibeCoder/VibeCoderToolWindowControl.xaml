@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
-             xmlns:core="clr-namespace:VibeCoder.Core.Services;assembly=VibeCoder.Core"
+             xmlns:core="clr-namespace:Agent.Core.Services;assembly=Agent.Core"
              xmlns:conv="clr-namespace:VibeCoder.Converters"
              xmlns:controls="clr-namespace:VibeCoder.Controls"
              xmlns:md="clr-namespace:MaterialDesignThemes.Wpf;assembly=MaterialDesignThemes.Wpf"
@@ -1760,49 +1760,6 @@
                                                   ToolTip="Toggle dark/light theme"/>
                                     <TextBlock Text="Dark" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                 </StackPanel>
-
-                                <TextBlock Text="Dynamic color — seed hue" Margin="0,0,0,4"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Slider x:Name="SeedHueSlider" Width="220" Minimum="0" Maximum="360"
-                                            TickFrequency="15" IsSnapToTickEnabled="False"
-                                            SmallChange="1" LargeChange="15"
-                                            ValueChanged="OnSeedHueChanged" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="SeedHueValueText" Text="256" VerticalAlignment="Center"
-                                               Margin="10,0,0,0" Width="40"/>
-                                    <Border x:Name="SeedPreview" Width="32" Height="32" CornerRadius="4"
-                                            Margin="12,0,0,0" VerticalAlignment="Center"
-                                            BorderThickness="1" BorderBrush="{DynamicResource Dark.Border}"/>
-                                </StackPanel>
-
-                                <ComboBox x:Name="ThemeVariantCombo" SelectedIndex="1" Margin="0,0,0,8"
-                                          Style="{StaticResource CompactOutlinedComboBox}"
-                                          md:HintAssist.Hint="Variant"
-                                          SelectionChanged="OnThemeVariantChanged">
-                                    <ComboBoxItem Content="Monochrome"/>
-                                    <ComboBoxItem Content="Neutral"/>
-                                    <ComboBoxItem Content="Tonal Spot"/>
-                                    <ComboBoxItem Content="Vibrant"/>
-                                    <ComboBoxItem Content="Expressive"/>
-                                    <ComboBoxItem Content="Fidelity"/>
-                                    <ComboBoxItem Content="Content"/>
-                                    <ComboBoxItem Content="Rainbow"/>
-                                    <ComboBoxItem Content="Fruit Salad"/>
-                                </ComboBox>
-
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Contrast" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                        <Slider x:Name="ThemeContrastSlider" Width="220" Minimum="0" Maximum="1"
-                                                TickFrequency="0.05" SmallChange="0.05" LargeChange="0.1"
-                                                ValueChanged="OnThemeContrastChanged" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="ThemeContrastValueText" Text="0.5" VerticalAlignment="Center"
-                                                   Margin="10,0,0,0" Width="40"/>
-                                    </StackPanel>
-                                </Grid>
 
                                 <TextBlock Text="Preset colors" FontWeight="SemiBold" Margin="0,0,0,4"/>
                                 <TextBlock Text="Click a color to apply it as primary (and secondary when available)."

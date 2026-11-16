@@ -3,7 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
-using VibeCoder.Core.Contracts;
+using Agent.Core.Contracts;
 using Vosk;
 
 namespace VibeCoder.Services

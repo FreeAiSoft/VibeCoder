@@ -5,7 +5,7 @@ using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using DWP = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using NUnit.Framework;
-using VibeCoder.Core.Services;
+using Agent.Core.Services;
 
 namespace VibeCoder.Tests
 {

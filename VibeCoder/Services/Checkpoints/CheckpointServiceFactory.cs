@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using VibeCoder.Core.Checkpoints;
+using Agent.Core.Checkpoints;
 
 namespace VibeCoder.Services.Checkpoints
 {
