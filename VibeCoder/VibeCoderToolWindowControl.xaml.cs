@@ -13,11 +13,12 @@ using Agent.Core.Checkpoints;
 using Agent.Core.Context;
 using Agent.Core.Contracts;
 using Agent.Core.Services;
+using Agent.Models;
 using VibeCoder.Services;
 using VibeCoder.Services.AgentTools;
 using VibeCoder.Services.Checkpoints;
 using VibeCoder.Controls;
-using VibeCoder.Markdown;
+using Agent.Toolkit.Wpf.Markdown;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.PlatformUI;
@@ -45,26 +46,16 @@ namespace VibeCoder
     /// </summary>
     public partial class VibeCoderToolWindowControl : UserControl
     {
-        /// <summary>Explicit UI phase of the current agent turn (drives the footer buttons/indicators).</summary>
-        private enum AgentPhase
-        {
-            Idle,
-            Streaming,
-            Error
-        }
-
         private VibeCoder.Services.SettingsData _settings;
         private IAiProvider _ai;
         private IBuildFeedbackService _buildFeedback;
         private OutputWindowService _outputWindow;
         private readonly GitService _git = new GitService();
         private readonly CheckpointServiceFactory _checkpoints = new CheckpointServiceFactory();
-        private AgentMode _mode = AgentMode.Plan;
-        private AgentPhase _phase = AgentPhase.Idle;
+        private readonly ChatModel _chat;
+        private readonly ContextUsageBinder _contextUsageBinder;
         private AgentToolRegistry? _toolRegistry;
         private AgentRunner? _agentRunner;
-        private ITokenUsageProvider? _tokenUsage;
-        private int _lastEstimatedInputTokens;
         private IMessageNotifier? _messageNotifier;
         private IRetryNotifier? _retryNotifier;
         private IPromptNotifier? _promptNotifier;
@@ -72,8 +63,6 @@ namespace VibeCoder
         private ISpeechToTextService _stt;
         private bool _isRecording;
         private bool _isTranscribing;
-        private readonly ObservableCollection<ChatMessage> _messages = new ObservableCollection<ChatMessage>();
-        private readonly ObservableCollection<ChatAttachment> _attachments = new ObservableCollection<ChatAttachment>();
 
         private ThemeService _themeService;
         private readonly ObservableCollection<ThemeSwatchItem> _themeSwatches = new ObservableCollection<ThemeSwatchItem>();
@@ -101,22 +90,14 @@ namespace VibeCoder
         private const int CommitDiffMaxChars = 8000;
         private const int ErrorContextLines = 15;
         private const int MaxErrorsWithContext = 10;
-        private readonly ObservableCollection<VibeCoder.Services.ChatConversation> _conversations = new ObservableCollection<VibeCoder.Services.ChatConversation>();
-        private VibeCoder.Services.ChatConversation _currentConversation = new VibeCoder.Services.ChatConversation();
         private readonly DispatcherTimer _historySaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
         private readonly DispatcherTimer _reasoningFlushTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         private readonly StringBuilder _reasoningBuffer = new StringBuilder();
         private ChatMessage? _currentThinking;
-        private bool _loadingHistory;
-        private VibeCoder.Services.ChatViewMode _chatViewMode = VibeCoder.Services.ChatViewMode.Conversation;
         // Starts true so XAML load events (e.g. ModeToggle ValueChanged) don't
         // overwrite persisted state before RestoreUiState() runs.
         private bool _restoringUiState = true;
-        private ChatMessage? _pinnedMessage;
-        private ICollectionView? _chatListView;
         private bool _pinnedExpanded;
-        private bool _chatAutoScroll = true;
-        private const double ChatAutoScrollThreshold = 1.0;
 
         public VibeCoderToolWindowControl()
         {
@@ -126,21 +107,22 @@ namespace VibeCoder
             // dependency when it is loaded from our code rather than from the BAML reader.
             System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(PackIcon).TypeHandle);
             this.InitializeComponent();
+            _chat = new ChatModel(new VibeCoder.Services.ChatHistoryStore(), new VibeCoder.Services.UiStateStore());
+            _contextUsageBinder = new ContextUsageBinder(_chat, SynchronizationContext.Current);
+            ChatContextIndicator.Model = _chat;
             ConfigureNumericControls();
             _themeService = new ThemeService(this.Resources);
             _settingsToastTimer.Tick += OnSettingsToastTick;
             MainTabs.SelectionChanged += OnMainTabsSelectionChanged;
-            ChatMessages.ScrollChanged += OnChatScrollChanged;
+            ChatMessages.Messages = _chat.Messages;
+            ChatMessages.Filter = item => !ReferenceEquals(item, _chat.PinnedMessage);
             ChatMessages.CopyMessageRequested += OnCopyMessageRequested;
-            ChatMessages.QuestionOptionSelected += OnQuestionOptionSelected;
+            ChatMessages.QuestionAnswered += OnQuestionAnswered;
             ChatMessages.QuestionSkipped += OnQuestionSkipped;
-            ChatMessages.CheckpointCompareRequested += OnCheckpointCompareRequested;
             ChatMessages.CheckpointRestoreRequested += OnCheckpointRestoreRequested;
-            _chatListView = CollectionViewSource.GetDefaultView(_messages);
-            _chatListView.Filter = item => !ReferenceEquals(item, _pinnedMessage);
-            ChatMessages.ItemsSource = _chatListView;
-            AttachmentsList.ItemsSource = _attachments;
-            HistoryList.ItemsSource = _conversations;
+            ChatMessages.DiffOpenRequested += OnDiffOpenRequested;
+            AttachmentsList.ItemsSource = _chat.Attachments;
+            HistoryList.ItemsSource = _chat.History;
             LoadSettings();
             PopulateThemeSwatches();
             ApplyThemeFromSettings();
@@ -163,7 +145,7 @@ namespace VibeCoder
         /// </summary>
         private void PopulateGallerySamples()
         {
-            GalleryChatMessages.ItemsSource = new List<ChatMessage>
+            GalleryChatMessages.Messages = new ObservableCollection<ChatMessage>
             {
                 new ChatMessage { Kind = ChatMessageKind.User, Text = "Fix the null-check in the parser and add a regression test." },
                 new ChatMessage { Kind = ChatMessageKind.AgentText, Text = "Here is the plan:\n\n- Add a null guard in `Parse()`\n- Add a regression test" },
@@ -292,17 +274,16 @@ namespace VibeCoder
 
         private void RecreateAiProvider()
         {
-            UnhookTokenUsage();
+            _contextUsageBinder.Detach();
             UnhookMessageNotifier();
             UnhookRetryNotifier();
             UnhookPromptNotifier();
             _ai = VibeCoder.Services.AiProviderFactory.Create(_settings);
             LogService.Info("AI provider recreated: " + (_ai == null ? "null" : _ai.GetType().Name));
-            HookTokenUsage();
+            _contextUsageBinder.Attach(_ai as ITokenUsageProvider, BuildContextBudget());
             HookMessageNotifier();
             HookRetryNotifier();
             HookPromptNotifier();
-            UpdateTokenUsageDisplay();
         }
 
         private void AppendChat(string text)
@@ -327,11 +308,6 @@ namespace VibeCoder
         private void AppendCompaction(string text)
         {
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.Compaction, Text = text });
-        }
-
-        private void AppendModeSwitch(string text)
-        {
-            AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.ModeSwitch, Text = text });
         }
 
         /// <summary>
@@ -368,26 +344,21 @@ namespace VibeCoder
             }
         }
 
-        private void OnQuestionOptionSelected(string option)
+        private void OnQuestionAnswered(object sender, ChatMessage message)
         {
             if (_questionTcs == null) return;
-            if (string.IsNullOrEmpty(option)) return;
-            if (_activeQuestion?.Payload is QuestionPayload q)
-                q.Answer = option;
+            var answer = (message?.Payload as QuestionPayload)?.Answer;
+            if (string.IsNullOrEmpty(answer)) return;
             ScheduleHistorySave();
-            _questionTcs.TrySetResult(option);
+            _questionTcs.TrySetResult(answer);
         }
 
-        private void OnQuestionSkipped()
+        private void OnQuestionSkipped(object sender, ChatMessage message)
         {
             if (_questionTcs == null) return;
-            if (_activeQuestion?.Payload is QuestionPayload q)
-            {
-                q.Answer = SkipAnswerText;
-                q.IsSkipped = true;
-            }
+            var answer = (message?.Payload as QuestionPayload)?.Answer ?? SkipAnswerText;
             ScheduleHistorySave();
-            _questionTcs.TrySetResult(SkipAnswerText);
+            _questionTcs.TrySetResult(answer);
         }
 
         /// <summary>
@@ -420,17 +391,12 @@ namespace VibeCoder
                 Dispatcher.BeginInvoke(new Action(() => AppendChatMessage(message)));
                 return;
             }
-            _messages.Add(message);
-            if (message.Kind == ChatMessageKind.User && _pinnedMessage == null)
-                RefreshPinnedMessage();
-            if (_chatAutoScroll)
-                ChatMessages.ScrollToEnd();
-            if (!_loadingHistory)
-                ScheduleHistorySave();
+            ChatMessages.Append(message);
+            ScheduleHistorySave();
         }
 
 
-        private void OnCopyMessageRequested(ChatMessage message)
+        private void OnCopyMessageRequested(object sender, ChatMessage message)
         {
             if (message == null) return;
             try { Clipboard.SetText(FormatMessageForCopy(message)); }
@@ -460,30 +426,10 @@ namespace VibeCoder
             });
         }
 
-        /// <summary>
-        /// Disables chat auto-scroll as soon as the user scrolls away from the bottom
-        /// and re-enables it when they scroll back to the bottom.
-        /// Content/viewport size changes are ignored so that growing content doesn't
-        /// spuriously disable auto-scroll while the user is still at the bottom.
-        /// </summary>
-        private void OnChatScrollChanged(object sender, ScrollChangedEventArgs e)
-        {
-            double scrollableHeight = e.ExtentHeight - e.ViewportHeight;
-            bool atBottom = e.VerticalOffset >= scrollableHeight - ChatAutoScrollThreshold;
-            if (atBottom)
-            {
-                _chatAutoScroll = true;
-            }
-            else if (e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
-            {
-                _chatAutoScroll = false;
-            }
-        }
-
         private void OnCopyConversation(object sender, RoutedEventArgs e)
         {
             var sb = new StringBuilder();
-            foreach (var m in _messages)
+            foreach (var m in _chat.Messages)
             {
                 if (sb.Length > 0) sb.AppendLine().AppendLine();
                 sb.Append(FormatMessageForCopy(m));
@@ -507,20 +453,6 @@ namespace VibeCoder
             return sb.ToString();
         }
 
-
-        private void HookTokenUsage()
-        {
-            _tokenUsage = _ai as ITokenUsageProvider;
-            if (_tokenUsage != null)
-                _tokenUsage.TokenUsageUpdated += OnTokenUsageUpdated;
-        }
-
-        private void UnhookTokenUsage()
-        {
-            if (_tokenUsage != null)
-                _tokenUsage.TokenUsageUpdated -= OnTokenUsageUpdated;
-            _tokenUsage = null;
-        }
 
         private void HookMessageNotifier()
         {
@@ -573,12 +505,6 @@ namespace VibeCoder
 
         private void OnPromptAssembled(object? sender, PromptAssembledEventArgs e)
         {
-            _lastEstimatedInputTokens = e.EstimatedInputTokens;
-            if (!Dispatcher.CheckAccess())
-                Dispatcher.BeginInvoke(new Action(UpdateTokenUsageDisplay));
-            else
-                UpdateTokenUsageDisplay();
-
             var dump = FormatPromptDump(e);
             LogService.ChatInfo(dump);
             try
@@ -631,43 +557,6 @@ namespace VibeCoder
                 " elapsed=" + e.Elapsed +
                 " remaining=" + e.Remaining +
                 " body=" + (e.Body ?? "").Replace("\r", " ").Replace("\n", " "));
-        }
-
-
-        private void OnTokenUsageUpdated(object? sender, TokenUsage usage)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.BeginInvoke(new Action(() => OnTokenUsageUpdated(sender, usage)));
-                return;
-            }
-            UpdateTokenUsageDisplay();
-        }
-
-        private void UpdateTokenUsageDisplay()
-        {
-            var provider = _tokenUsage;
-            if (provider == null)
-            {
-                ChatTokenUsageText.Text = "Context window: —";
-                ChatContextFillBar.Value = 0;
-                return;
-            }
-            var usage = provider.TotalTokenUsage;
-            var occupied = _lastEstimatedInputTokens;
-            var text = "Context window: " + occupied.ToString("N0") +
-                       " / " + provider.ContextWindowSize.ToString("N0") + " tokens" +
-                       "    total " + usage.TotalTokens.ToString("N0");
-            if (usage.CacheHitTokens > 0)
-                text += " · cache hit " + usage.CacheHitTokens.ToString("N0");
-            if (usage.EstimatedCostUsd > 0)
-                text += " · $" + usage.EstimatedCostUsd.ToString("0.0000", CultureInfo.InvariantCulture);
-            ChatTokenUsageText.Text = text;
-
-            var ratio = provider.ContextWindowSize > 0
-                ? Math.Min(100.0, 100.0 * occupied / provider.ContextWindowSize)
-                : 0.0;
-            ChatContextFillBar.Value = ratio;
         }
 
         private void ShowError(Exception ex)
@@ -893,7 +782,7 @@ namespace VibeCoder
                         return;
                     }
 
-                    _attachments.Add(new ChatAttachment
+                    _chat.Attachments.Add(new ChatAttachment
                     {
                         FileName = Path.GetFileName(fileName),
                         IsImage = true,
@@ -909,7 +798,7 @@ namespace VibeCoder
                     return;
                 }
 
-                _attachments.Add(new ChatAttachment
+                _chat.Attachments.Add(new ChatAttachment
                 {
                     FileName = Path.GetFileName(fileName),
                     IsImage = false,
@@ -930,13 +819,13 @@ namespace VibeCoder
         {
             if (!(sender is Button { Tag: ChatAttachment attachment }))
                 return;
-            _attachments.Remove(attachment);
+            _chat.Attachments.Remove(attachment);
             UpdateAttachmentsVisibility();
         }
 
         private void UpdateAttachmentsVisibility()
         {
-            AttachmentsList.Visibility = _attachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            AttachmentsList.Visibility = _chat.Attachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private static bool IsImageExtension(string extension)
@@ -1066,9 +955,9 @@ namespace VibeCoder
         /// <summary>Switches the footer to the given phase and updates the dependent controls.</summary>
         private void SetPhase(AgentPhase phase)
         {
-            if (_phase == phase)
+            if (_chat.Phase == phase)
                 return;
-            _phase = phase;
+            _chat.Phase = phase;
             SendButton.IsEnabled = phase != AgentPhase.Streaming;
             DoItButton.IsEnabled = phase != AgentPhase.Streaming;
             CancelButton.Visibility = phase == AgentPhase.Streaming ? Visibility.Visible : Visibility.Collapsed;
@@ -1464,7 +1353,7 @@ namespace VibeCoder
         private async Task SendMessageAsync()
         {
             var text = InputBox.Text.Trim();
-            var attachments = _attachments.ToList();
+            var attachments = _chat.Attachments.ToList();
             if (text.Length == 0 && attachments.Count == 0) return;
 
             var action = ChatSendRouter.Decide(
@@ -1475,7 +1364,7 @@ namespace VibeCoder
             if (action == ChatSendAction.AnswerQuestion)
             {
                 InputBox.Clear();
-                _attachments.Clear();
+                _chat.Attachments.Clear();
                 UpdateAttachmentsVisibility();
                 AnswerActiveQuestion(text);
                 return;
@@ -1490,7 +1379,7 @@ namespace VibeCoder
             }
 
             InputBox.Clear();
-            _attachments.Clear();
+            _chat.Attachments.Clear();
             UpdateAttachmentsVisibility();
             await SendChatTextAsync(text, attachments);
         }
@@ -1589,7 +1478,7 @@ namespace VibeCoder
             var ws = GetOpenSolutionDirectory();
             if (string.IsNullOrWhiteSpace(ws)) return null;
 
-            var taskId = _currentConversation?.Id ?? Guid.NewGuid().ToString("N");
+            var taskId = _chat.ActiveChatConversation?.Id ?? Guid.NewGuid().ToString("N");
             try
             {
                 var result = await Task.Run(async () =>
@@ -1628,11 +1517,13 @@ namespace VibeCoder
                     Message = message,
                     Sequence = sequence,
                     CreatedAtUtc = DateTime.UtcNow,
+                    HasChanges = true,
+                    HasDiff = true,
                 }
             });
         }
 
-        private async void OnCheckpointCompareRequested(CheckpointPayload payload)
+        private async void CompareCheckpoint(CheckpointPayload payload)
         {
             if (payload == null) return;
             try
@@ -1647,7 +1538,19 @@ namespace VibeCoder
             }
         }
 
-        private async void OnCheckpointRestoreRequested(CheckpointPayload payload)
+        private void OnCheckpointRestoreRequested(object sender, ChatMessage message)
+        {
+            if (message?.Payload is CheckpointPayload payload)
+                RestoreCheckpoint(payload);
+        }
+
+        private void OnDiffOpenRequested(object sender, ChatMessage message)
+        {
+            if (message?.Payload is CheckpointPayload payload)
+                CompareCheckpoint(payload);
+        }
+
+        private async void RestoreCheckpoint(CheckpointPayload payload)
         {
             if (payload == null) return;
 
@@ -1767,11 +1670,10 @@ namespace VibeCoder
             if (string.IsNullOrWhiteSpace(promptText) && images.Count == 0)
                 return;
 
-            var modeName = _mode.ToString();
+            var modeName = _chat.Mode.ToString();
             var history = BuildTranscript();
+            _chat.EnsureActiveConversation();
             AppendChatMessage(new ChatMessage { Kind = ChatMessageKind.User, Text = uiText });
-            if (string.IsNullOrEmpty(_currentConversation.Title))
-                _currentConversation.Title = BuildChatTitle(uiText);
 
             // Reasoning blocks are created per model turn by OnAgentTurnStarted.
             _currentThinking = null;
@@ -1793,7 +1695,7 @@ namespace VibeCoder
                         _reasoningFlushTimer.Start();
                     }
                 });
-                var result = await _agentRunner.RunAsync(history, promptText, images, _mode, BuildContextBudget(), cts.Token, progress);
+                var result = await _agentRunner.RunAsync(history, promptText, images, _chat.Mode, BuildContextBudget(), cts.Token, progress);
 
                 // Finalize the current turn's "Thinking…" placeholder in place: it keeps its
                 // streamed reasoning and the final answer is appended as a NEW message below.
@@ -1816,7 +1718,7 @@ namespace VibeCoder
                     else
                     {
                         // No reasoning to show — drop the empty placeholder.
-                        _messages.Remove(thinking);
+                        _chat.Messages.Remove(thinking);
                     }
                 }
 
@@ -1825,7 +1727,7 @@ namespace VibeCoder
                 {
                     var finalMessage = new ChatMessage
                     {
-                        Kind = _mode == AgentMode.Act ? ChatMessageKind.ResultAnswerAct : ChatMessageKind.ResultAnswerPlan,
+                        Kind = _chat.Mode == AgentMode.Act ? ChatMessageKind.ResultAnswerAct : ChatMessageKind.ResultAnswerPlan,
                         Mode = modeName,
                         Text = result.FinalText
                     };
@@ -1840,7 +1742,7 @@ namespace VibeCoder
                 var cancelledThinking = _currentThinking;
                 if (cancelledThinking != null)
                     cancelledThinking.IsThinking = false;
-                if (cancelledThinking != null && _messages.Contains(cancelledThinking))
+                if (cancelledThinking != null && _chat.Messages.Contains(cancelledThinking))
                     AppendChat("Request cancelled.");
                 StopChatStatus();
                 LogService.ChatInfo("Agent chat request cancelled.");
@@ -1922,7 +1824,7 @@ namespace VibeCoder
         private List<ChatMessageData> BuildTranscript()
         {
             var transcript = new List<ChatMessageData>();
-            foreach (var message in _messages)
+            foreach (var message in _chat.Messages)
             {
                 if (string.IsNullOrWhiteSpace(message.Text))
                     continue;
@@ -1989,7 +1891,7 @@ namespace VibeCoder
             {
                 Kind = ChatMessageKind.Subagent,
                 Payload = new SubagentPayload { Item = item },
-                Mode = _mode.ToString()
+                Mode = _chat.Mode.ToString()
             });
             Dispatcher.BeginInvoke(new Action(() => item.Status = "running"));
 
@@ -2015,7 +1917,7 @@ namespace VibeCoder
 
             try
             {
-                var result = await runner.RunAsync(Array.Empty<ChatMessageData>(), task, _mode, budget, ct);
+                var result = await runner.RunAsync(Array.Empty<ChatMessageData>(), task, _chat.Mode, budget, ct);
                 var finalText = result?.FinalText ?? "";
                 Dispatcher.BeginInvoke(new Action(() => { item.Status = "completed"; item.Result = finalText; }));
                 return finalText;
@@ -2086,16 +1988,15 @@ namespace VibeCoder
             {
                 var condensed = await _agentRunner.CompactAsync(transcript, BuildContextBudget(), CancellationToken.None);
 
-                _messages.Clear();
-                foreach (var m in condensed)
+                var compacted = condensed.Select(m => new ChatMessage
                 {
-                    var kind = m.Role == "assistant" ? ChatMessageKind.AgentText
-                             : m.Role == "user" ? ChatMessageKind.User
-                             : ChatMessageKind.SystemNotice;
-                    _messages.Add(new ChatMessage { Kind = kind, Text = m.Content });
-                }
+                    Kind = m.Role == "assistant" ? ChatMessageKind.AgentText
+                         : m.Role == "user" ? ChatMessageKind.User
+                         : ChatMessageKind.SystemNotice,
+                    Text = m.Content
+                }).ToList();
+                _chat.ApplyCompactedTranscript(compacted);
                 AppendCompaction("Context compacted (summarized).");
-                RefreshPinnedMessage();
                 ScheduleHistorySave();
             }
             catch (Exception ex)
@@ -2325,13 +2226,13 @@ namespace VibeCoder
                 if (prev.HasReasoning)
                     prev.Text = string.Empty;   // keep as a reasoning-only block
                 else
-                    _messages.Remove(prev);     // nothing to show — drop the placeholder
+                    _chat.Messages.Remove(prev);     // nothing to show — drop the placeholder
             }
 
             var thinking = new ChatMessage
             {
                 Kind = ChatMessageKind.AgentText,
-                Mode = _mode.ToString(),
+                Mode = _chat.Mode.ToString(),
                 IsThinking = true,
                 IsPartial = true,
                 Text = "Thinking…"
@@ -2363,15 +2264,9 @@ namespace VibeCoder
             _reasoningFlushTimer.Tick += OnReasoningFlushTick;
             this.Unloaded += OnWindowUnloaded;
 
-            try
-            {
-                ChatHistoryStore.Initialize();
-                RefreshHistoryList();
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Chat history unavailable: " + ex.Message);
-            }
+            _chat.Run();
+            if (!string.IsNullOrEmpty(_chat.LastError))
+                AppendExtensionError(_chat.LastError);
 
             RestoreUiState();
         }
@@ -2382,23 +2277,23 @@ namespace VibeCoder
             _restoringUiState = true;
             try
             {
-                var state = UiStateStore.Load();
+                var state = _chat.LoadUiState();
 
-                _mode = state.AgentMode;
-                ModeToggle.SelectedValue = _mode == AgentMode.Act ? "Act"
-                    : _mode == AgentMode.Help ? "Help"
+                _chat.RestoreMode(state.AgentMode);
+                ModeToggle.SelectedValue = state.AgentMode == AgentMode.Act ? "Act"
+                    : state.AgentMode == AgentMode.Help ? "Help"
                     : "Plan";
                 ApplyModeBrush();
 
                 SelectTabByHeader(state.ActiveTab);
 
-                if (state.ChatViewMode == VibeCoder.Services.ChatViewMode.History)
+                if (state.ChatViewMode == ChatViewMode.History)
                 {
                     ShowHistoryView();
                 }
                 else
                 {
-                    var toOpen = ResolveConversationToOpen(state.LastConversationId);
+                    var toOpen = _chat.ResolveConversationToOpen(state.LastConversationId);
                     if (toOpen != null)
                         OpenConversation(toOpen.Id, markDirty: false);
                     else
@@ -2412,45 +2307,26 @@ namespace VibeCoder
             }
         }
 
-        private VibeCoder.Services.ChatConversation? ResolveConversationToOpen(string id)
-        {
-            if (!string.IsNullOrWhiteSpace(id))
-            {
-                try
-                {
-                    var stored = ChatHistoryStore.LoadConversation(id);
-                    if (stored != null)
-                        return stored;
-                }
-                catch
-                {
-                    // fall back to the most recent conversation below
-                }
-            }
-
-            return _conversations.FirstOrDefault();
-        }
-
-        private static string MainTabToHeader(VibeCoder.Services.MainTab tab)
+        private static string MainTabToHeader(MainTab tab)
         {
             switch (tab)
             {
-                case VibeCoder.Services.MainTab.Settings: return "Settings";
+                case MainTab.Settings: return "Settings";
                 default: return "Chat";
             }
         }
 
-        private static VibeCoder.Services.MainTab HeaderToMainTab(string? header)
+        private static MainTab HeaderToMainTab(string? header)
         {
             if (string.IsNullOrWhiteSpace(header))
-                return VibeCoder.Services.MainTab.Chat;
+                return MainTab.Chat;
 
             var value = header.Trim();
-            if (string.Equals(value, "Settings", StringComparison.OrdinalIgnoreCase)) return VibeCoder.Services.MainTab.Settings;
-            return VibeCoder.Services.MainTab.Chat;
+            if (string.Equals(value, "Settings", StringComparison.OrdinalIgnoreCase)) return MainTab.Settings;
+            return MainTab.Chat;
         }
 
-        private void SelectTabByHeader(VibeCoder.Services.MainTab tab)
+        private void SelectTabByHeader(MainTab tab)
         {
             var header = MainTabToHeader(tab);
 
@@ -2479,13 +2355,7 @@ namespace VibeCoder
             if (_restoringUiState)
                 return;
 
-            UiStateStore.Save(new VibeCoder.Services.UiStateData
-            {
-                ChatViewMode = _chatViewMode,
-                LastConversationId = _currentConversation?.Id ?? "",
-                AgentMode = _mode,
-                ActiveTab = HeaderToMainTab((MainTabs.SelectedItem as TabItem)?.Tag as string)
-            });
+            _chat.PersistUiState(HeaderToMainTab((MainTabs.SelectedItem as TabItem)?.Tag as string));
         }
 
         private void OnWindowUnloaded(object sender, RoutedEventArgs e)
@@ -2512,54 +2382,13 @@ namespace VibeCoder
 
         private void SaveHistoryNow()
         {
-            if (_currentConversation == null || string.IsNullOrWhiteSpace(_currentConversation.Id))
-                return;
-
-            _currentConversation.Messages = _messages
-                .Where(m => m.Kind != ChatMessageKind.Checkpoint)
-                .Select(ToHistoryMessage)
-                .ToList();
-            if (string.IsNullOrEmpty(_currentConversation.Title))
-            {
-                var firstUser = _currentConversation.Messages.FirstOrDefault(m => m.Kind == ChatMessageKind.User);
-                if (firstUser != null)
-                    _currentConversation.Title = BuildChatTitle(firstUser.Text);
-            }
-            _currentConversation.UpdatedAtUtc = DateTime.UtcNow;
-
-            try
-            {
-                ChatHistoryStore.SaveConversation(_currentConversation);
-                RefreshHistoryList();
-            }
-            catch
-            {
-                // History persistence is best-effort; never block or spam the chat on failure.
-            }
+            _chat.SaveHistoryNow();
         }
 
         private void StartNewChat(bool markDirty = true)
         {
             _chatCts?.Cancel();
-            SaveHistoryNow();
-
-            _loadingHistory = true;
-            try
-            {
-                _messages.Clear();
-                _currentConversation = new VibeCoder.Services.ChatConversation
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    CreatedAtUtc = DateTime.UtcNow,
-                    UpdatedAtUtc = DateTime.UtcNow
-                };
-            }
-            finally
-            {
-                _loadingHistory = false;
-            }
-
-            RefreshPinnedMessage();
+            _chat.StartNewChat(markDirty);
             ShowConversationView();
             if (markDirty)
                 ScheduleHistorySave();
@@ -2568,43 +2397,18 @@ namespace VibeCoder
         {
             if (string.IsNullOrWhiteSpace(id))
                 return;
-            if (id == _currentConversation?.Id)
+            if (id == _chat.ActiveConversationId)
                 return;
 
             _chatCts?.Cancel();
-            SaveHistoryNow();
-
-            VibeCoder.Services.ChatConversation? stored;
-            try
+            if (!_chat.OpenConversation(id, markDirty))
             {
-                stored = ChatHistoryStore.LoadConversation(id);
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to open chat: " + ex.Message);
+                if (!string.IsNullOrEmpty(_chat.LastError))
+                    AppendExtensionError(_chat.LastError);
                 return;
             }
-            if (stored == null)
-                return;
 
-            _loadingHistory = true;
-            try
-            {
-                _messages.Clear();
-                foreach (var m in stored.Messages)
-                {
-                    _messages.Add(FromHistoryMessage(m));
-                }
-                _currentConversation = stored;
-                RefreshPinnedMessage();
-                _chatAutoScroll = true;
-                ChatMessages.ScrollToEnd();
-            }
-            finally
-            {
-                _loadingHistory = false;
-            }
-
+            ChatMessages.ScrollToEnd();
             if (markDirty)
                 ScheduleHistorySave();
             PersistUiState();
@@ -2612,59 +2416,49 @@ namespace VibeCoder
 
         private void RefreshHistoryList()
         {
-            try
-            {
-                _conversations.Clear();
-                foreach (var conversation in ChatHistoryStore.ListConversations())
-                    _conversations.Add(conversation);
-            }
-            catch
-            {
-                // best-effort refresh of the history list
-            }
+            _chat.RefreshHistory();
         }
 
         private void ShowConversationView()
         {
-            _chatViewMode = VibeCoder.Services.ChatViewMode.Conversation;
+            _chat.ShowConversationView();
             ApplyChatViewMode();
             PersistUiState();
         }
 
         private void ShowHistoryView()
         {
-            _chatViewMode = VibeCoder.Services.ChatViewMode.History;
-            RefreshHistoryList();
+            _chat.ShowHistoryView();
             ApplyChatViewMode();
             PersistUiState();
         }
 
         private void ApplyChatViewMode()
         {
-            var conversation = _chatViewMode == VibeCoder.Services.ChatViewMode.Conversation;
+            var conversation = _chat.IsConversationView;
             ChatToolbarPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatListContainer.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatSplitter.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
             ChatInputPanel.Visibility = conversation ? Visibility.Visible : Visibility.Collapsed;
-            PinnedHeaderPanel.Visibility = conversation && _pinnedMessage != null ? Visibility.Visible : Visibility.Collapsed;
+            PinnedHeaderPanel.Visibility = conversation && _chat.PinnedMessage != null ? Visibility.Visible : Visibility.Collapsed;
             HistoryViewPanel.Visibility = conversation ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void OnCloseChat(object sender, RoutedEventArgs e)
         {
-            SaveHistoryNow();
+            _chat.CloseActiveChat();
             ShowHistoryView();
         }
 
         private void OnShowHistory(object sender, RoutedEventArgs e)
         {
-            SaveHistoryNow();
+            _chat.SaveHistoryNow();
             ShowHistoryView();
         }
 
         private void OnHistoryCardClick(object sender, RoutedEventArgs e)
         {
-            if (sender is FrameworkElement { DataContext: VibeCoder.Services.ChatConversation conversation })
+            if (sender is FrameworkElement { DataContext: ChatConversation conversation })
             {
                 OpenConversation(conversation.Id);
                 ShowConversationView();
@@ -2673,7 +2467,7 @@ namespace VibeCoder
 
         private void OnDeleteHistoryCard(object sender, RoutedEventArgs e)
         {
-            if (!(sender is FrameworkElement { DataContext: VibeCoder.Services.ChatConversation conversation }))
+            if (!(sender is FrameworkElement { DataContext: ChatConversation conversation }))
                 return;
 
             var result = MessageDialog.Show(
@@ -2683,20 +2477,8 @@ namespace VibeCoder
             if (result != MessageDialogCommand.Yes)
                 return;
 
-            try
-            {
-                ChatHistoryStore.DeleteConversation(conversation.Id);
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to delete chat: " + ex.Message);
-                return;
-            }
-
-            if (conversation.Id == _currentConversation?.Id)
-                ResetCurrentConversation();
-
-            RefreshHistoryList();
+            if (!_chat.DeleteConversation(conversation.Id))
+                AppendExtensionError(_chat.LastError);
         }
 
         private void OnClearHistory(object sender, RoutedEventArgs e)
@@ -2708,42 +2490,8 @@ namespace VibeCoder
             if (result != MessageDialogCommand.Yes)
                 return;
 
-            try
-            {
-                ChatHistoryStore.DeleteAllConversations();
-            }
-            catch (Exception ex)
-            {
-                AppendExtensionError("Failed to clear chat history: " + ex.Message);
-                return;
-            }
-
-            ResetCurrentConversation();
-            RefreshHistoryList();
-        }
-
-        /// <summary>Resets the in-memory conversation to a fresh empty one without persisting it.</summary>
-        private void ResetCurrentConversation()
-        {
-            _historySaveTimer.Stop();
-
-            _loadingHistory = true;
-            try
-            {
-                _messages.Clear();
-                _currentConversation = new VibeCoder.Services.ChatConversation
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    CreatedAtUtc = DateTime.UtcNow,
-                    UpdatedAtUtc = DateTime.UtcNow
-                };
-            }
-            finally
-            {
-                _loadingHistory = false;
-            }
-
-            RefreshPinnedMessage();
+            if (!_chat.ClearHistory())
+                AppendExtensionError(_chat.LastError);
             PersistUiState();
         }
 
@@ -2766,13 +2514,11 @@ namespace VibeCoder
 
         private void RefreshPinnedMessage()
         {
-            _pinnedMessage = _messages.FirstOrDefault(m => m.Kind == ChatMessageKind.User)
-                          ?? _messages.FirstOrDefault();
-            PinnedHeaderPanel.DataContext = _pinnedMessage;
+            _chat.RefreshPinnedMessage();
+            PinnedHeaderPanel.DataContext = _chat.PinnedMessage;
             _pinnedExpanded = false;
             UpdatePinnedExpandState();
-            if (_chatListView != null)
-                _chatListView.Refresh();
+            ChatMessages.RefreshFilter();
             ApplyChatViewMode();
         }
 
@@ -2781,89 +2527,33 @@ namespace VibeCoder
             StartNewChat();
         }
 
-        private static VibeCoder.Services.ChatHistoryMessage ToHistoryMessage(ChatMessage message)
-        {
-            if (message.Payload is QuestionPayload question)
-            {
-                return new VibeCoder.Services.ChatHistoryMessage
-                {
-                    Kind = message.Kind,
-                    Text = question.Question ?? "",
-                    ToolName = question.Answer ?? "",
-                    OptionsJson = QuestionOptionsCodec.Encode(question.Options),
-                    Reasoning = message.Reasoning,
-                    Mode = message.Mode
-                };
-            }
-
-            var tool = message.Payload as ToolCallPayload;
-            return new VibeCoder.Services.ChatHistoryMessage
-            {
-                Kind = message.Kind,
-                Text = tool != null ? tool.Result : message.Text,
-                ToolName = tool?.ToolName ?? "",
-                Reasoning = message.Reasoning,
-                Mode = message.Mode
-            };
-        }
-
-        private static ChatMessage FromHistoryMessage(VibeCoder.Services.ChatHistoryMessage m)
-        {
-            if (m.Kind == ChatMessageKind.Question)
-            {
-                return new ChatMessage
-                {
-                    Kind = m.Kind,
-                    Payload = new QuestionPayload
-                    {
-                        Question = m.Text ?? "",
-                        Options = QuestionOptionsCodec.Decode(m.OptionsJson),
-                        Answer = m.ToolName ?? "",
-                        IsSkipped = string.Equals(m.ToolName, SkipAnswerText, StringComparison.Ordinal)
-                    }
-                };
-            }
-
-            if (m.Kind == ChatMessageKind.ToolCall || m.Kind == ChatMessageKind.ToolBlocked)
-            {
-                return new ChatMessage
-                {
-                    Kind = m.Kind,
-                    Payload = new ToolCallPayload { ToolName = m.ToolName ?? "", Result = m.Text ?? "", Blocked = m.Kind == ChatMessageKind.ToolBlocked }
-                };
-            }
-
-            return new ChatMessage { Kind = m.Kind, Text = m.Text, Reasoning = m.Reasoning, Mode = m.Mode };
-        }
-
-        private static string BuildChatTitle(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-                return "New chat";
-            var singleLine = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-            const int max = 60;
-            return singleLine.Length <= max ? singleLine : singleLine.Substring(0, max) + "…";
-        }
-
         private void OnModeChanged(object sender, RoutedEventArgs e)
         {
-            var selected = ModeToggle?.SelectedValue?.ToString();
-            _mode = selected == "Act" ? AgentMode.Act
-                  : selected == "Help" ? AgentMode.Help
-                  : AgentMode.Plan;
-            ApplyModeBrush();
-            if (_restoringUiState)
+            // XAML raises ValueChanged while InitializeComponent() is still running and
+            // _chat has not been assigned yet — ignore that first pass; RestoreUiState()
+            // applies the persisted mode afterwards.
+            if (_chat == null)
                 return;
-            AppendModeSwitch("Mode: " + _mode);
-            PersistUiState();
+
+            var selected = ModeToggle?.SelectedValue?.ToString();
+            var mode = selected == "Act" ? AgentMode.Act
+                     : selected == "Help" ? AgentMode.Help
+                     : AgentMode.Plan;
+            if (_restoringUiState)
+                _chat.RestoreMode(mode);
+            else
+                _chat.SwitchMode(mode);
+            ApplyModeBrush();
+            if (!_restoringUiState)
+                PersistUiState();
         }
 
         private void ApplyModeBrush()
         {
             if (InputBox == null)
                 return;
-            var key = _mode == AgentMode.Act ? "Mode.ActBrush"
-                    : _mode == AgentMode.Help ? "Mode.HelpBrush"
+            var key = _chat.Mode == AgentMode.Act ? "Mode.ActBrush"
+                    : _chat.Mode == AgentMode.Help ? "Mode.HelpBrush"
                     : "Mode.PlanBrush";
             InputBox.BorderBrush = (Brush)FindResource(key);
         }

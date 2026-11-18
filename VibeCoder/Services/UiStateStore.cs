@@ -1,58 +1,22 @@
 using System;
 using System.IO;
-using System.Runtime.Serialization;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
+using Agent.Core.Contracts;
 using Agent.Core.Models;
+using Newtonsoft.Json;
 
 namespace VibeCoder.Services
 {
-    /// <summary>Chat tab view: the active conversation or the history list.</summary>
-    public enum ChatViewMode
-    {
-        /// <summary>The active conversation is shown.</summary>
-        Conversation,
-
-        /// <summary>The list of saved conversations is shown.</summary>
-        History
-    }
-
-    /// <summary>Main tabs of the Vibe Coder window.</summary>
-    public enum MainTab
-    {
-        /// <summary>Agent chat.</summary>
-        Chat,
-
-        /// <summary>Extension settings.</summary>
-        Settings
-    }
-
-    /// <summary>Per-session UI state persisted between Visual Studio sessions.</summary>
-    public class UiStateData
-    {
-        /// <summary>Chat tab view: Conversation or History.</summary>
-        [JsonConverter(typeof(StringEnumConverter))]
-        public ChatViewMode ChatViewMode { get; set; }
-
-        /// <summary>Id of the active conversation, or empty when none.</summary>
-        public string LastConversationId { get; set; } = "";
-
-        /// <summary>Agent mode: Plan or Act.</summary>
-        [JsonConverter(typeof(StringEnumConverter))]
-        public AgentMode AgentMode { get; set; }
-
-        /// <summary>Active main tab.</summary>
-        [JsonConverter(typeof(StringEnumConverter))]
-        public MainTab ActiveTab { get; set; }
-    }
-
-    /// <summary>Loads/saves the UI state JSON at %AppData%\VibeCoder\ui_state.json.</summary>
-    public static class UiStateStore
+    /// <summary>
+    /// Loads/saves the UI state JSON at %AppData%\VibeCoder\ui_state.json, implementing the
+    /// shared <see cref="IUiStateStore"/> contract so the shared <see cref="Agent.Models.ChatModel"/>
+    /// persists its session state.
+    /// </summary>
+    public sealed class UiStateStore : IUiStateStore
     {
         public static string StateFile => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeCoder", "ui_state.json");
 
-        public static UiStateData Load()
+        public UiStateData Load()
         {
             try
             {
@@ -74,7 +38,7 @@ namespace VibeCoder.Services
             return defaults;
         }
 
-        public static void Save(UiStateData state)
+        public void Save(UiStateData state)
         {
             if (state == null) return;
             try

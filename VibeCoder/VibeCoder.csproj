@@ -16,7 +16,8 @@
     <ProjectCapability Include="CreateVsixContainer" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Agent.Core" Version="1.7.1" />
+    <PackageReference Include="AgentToolkit" Version="1.9.0" />
+    <PackageReference Include="AgentToolkit.Wpf" Version="1.9.0" />
 
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
@@ -110,14 +111,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-  <ItemGroup>
-    <!-- Mermaid.js bundled as an embedded resource and read at runtime by MermaidDiagramControl. -->
-    <EmbeddedResource Include="Assets\mermaid.min.js">
-      <LogicalName>VibeCoder.Assets.mermaid.min.js</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
-
-
   <ItemGroup>
     <VSCTCompile Include="VibeCoderPackage.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>

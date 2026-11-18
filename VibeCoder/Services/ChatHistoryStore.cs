@@ -3,58 +3,23 @@ using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
+using Agent.Core.Contracts;
 using Agent.Core.Models;
+using Newtonsoft.Json;
 
 namespace VibeCoder.Services
 {
-    /// <summary>A single chat message persisted in the chat history database.</summary>
-    public class ChatHistoryMessage
-    {
-        public ChatMessageKind Kind { get; set; } = ChatMessageKind.SystemNotice;
-        public string Text { get; set; } = "";
-        public string Reasoning { get; set; } = "";
-        public string Mode { get; set; } = "";
-        public string ToolName { get; set; } = "";
-        public string OptionsJson { get; set; } = "";
-    }
-
-    /// <summary>A saved chat conversation with its messages.</summary>
-    public class ChatConversation
-    {
-        public string Id { get; set; } = "";
-        public string Title { get; set; } = "";
-        public DateTime CreatedAtUtc { get; set; }
-        public DateTime UpdatedAtUtc { get; set; }
-        public List<ChatHistoryMessage> Messages { get; set; } = new List<ChatHistoryMessage>();
-
-        /// <summary>Text shown in the history dropdown.</summary>
-        public string DisplayTitle
-        {
-            get
-            {
-                var title = string.IsNullOrWhiteSpace(Title) ? "(empty)" : Title;
-                var when = UpdatedAtUtc == default(DateTime)
-                    ? ""
-                    : "  ·  " + UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-                return title + when;
-            }
-        }
-
-        /// <summary>Title for a history card: the first message text, or a placeholder.</summary>
-        public string CardTitle => string.IsNullOrWhiteSpace(Title) ? "(empty)" : Title;
-
-        /// <summary>Local date shown on a history card.</summary>
-        public string DisplayDate => UpdatedAtUtc == default(DateTime)
-            ? ""
-            : UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-    }
-
     /// <summary>
-    /// SQLite-backed chat history. The database lives at %AppData%\VibeCoder\chat_history.db.
+    /// SQLite-backed <see cref="IChatHistoryStore"/>. The database lives at
+    /// %AppData%\VibeCoder\chat_history.db. VibeCoder does not scope history per workspace, so
+    /// <see cref="WorkspaceId"/> is accepted for the shared contract but ignored (global scope).
     /// </summary>
-    public static class ChatHistoryStore
+    public sealed class ChatHistoryStore : IChatHistoryStore
     {
         private const int MaxStoredConversations = 50;
+
+        /// <summary>Accepted for <see cref="IChatHistoryStore"/> compatibility; VibeCoder does not scope history.</summary>
+        public string WorkspaceId { get; set; } = "";
 
         public static string DirectoryPath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeCoder");
@@ -80,7 +45,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, position);";
 
         /// <summary>Creates the database and schema if needed.</summary>
-        public static void Initialize()
+        public void Initialize()
         {
             Directory.CreateDirectory(DirectoryPath);
 
@@ -97,13 +62,14 @@ CREATE TABLE IF NOT EXISTS conversations (
                 command.ExecuteNonQuery();
             }
 
-            // Migrate databases created before the kind/tool_name columns existed, and drop the
-            // legacy "role" column (history is reset when the old schema is detected).
+            // Migrate databases created before the kind/tool_name/options columns existed, drop the
+            // legacy "role" column, and add the important flag for the shared history contract.
             using (var connection = Open())
             {
                 EnsureColumn(connection, "messages", "kind", "TEXT NULL");
                 EnsureColumn(connection, "messages", "tool_name", "TEXT NULL");
                 EnsureColumn(connection, "messages", "options", "TEXT NULL");
+                EnsureColumn(connection, "conversations", "is_important", "INTEGER NOT NULL DEFAULT 0");
 
                 if (HasColumn(connection, "messages", "role"))
                 {
@@ -120,15 +86,16 @@ CREATE TABLE IF NOT EXISTS conversations (
                 }
             }
         }
+
         /// <summary>Returns conversation metadata (newest first), without messages.</summary>
-        public static IReadOnlyList<ChatConversation> ListConversations(int limit = MaxStoredConversations)
+        public IReadOnlyList<ChatConversation> ListConversations(int limit = MaxStoredConversations)
         {
             var result = new List<ChatConversation>();
             using (var connection = Open())
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = @"
-SELECT id, title, created_at_utc, updated_at_utc
+SELECT id, title, created_at_utc, updated_at_utc, is_important
 FROM conversations
 ORDER BY updated_at_utc DESC
 LIMIT @limit;";
@@ -143,7 +110,7 @@ LIMIT @limit;";
         }
 
         /// <summary>Loads a full conversation (messages ordered by position), or null if not found.</summary>
-        public static ChatConversation? LoadConversation(string id)
+        public ChatConversation LoadConversation(string id)
         {
             if (string.IsNullOrWhiteSpace(id))
                 return null;
@@ -173,7 +140,7 @@ ORDER BY position;";
                                 Reasoning = reader["reasoning"] as string ?? "",
                                 Mode = reader["mode"] as string ?? "",
                                 ToolName = reader["tool_name"] as string ?? "",
-                                OptionsJson = reader["options"] as string ?? ""
+                                Options = DecodeOptions(reader["options"] as string ?? "")
                             });
                         }
                     }
@@ -181,8 +148,10 @@ ORDER BY position;";
                 return conversation;
             }
         }
+
+
         /// <summary>Inserts or updates a conversation and its messages in a single transaction.</summary>
-        public static void SaveConversation(ChatConversation conversation)
+        public void SaveConversation(ChatConversation conversation)
         {
             if (conversation == null || string.IsNullOrWhiteSpace(conversation.Id))
                 return;
@@ -205,12 +174,13 @@ ORDER BY position;";
                 {
                     upsert.Transaction = transaction;
                     upsert.CommandText = @"
-INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc)
-VALUES (@id, @title, @created, @updated);";
+INSERT OR REPLACE INTO conversations (id, title, created_at_utc, updated_at_utc, is_important)
+VALUES (@id, @title, @created, @updated, @important);";
                     upsert.Parameters.AddWithValue("@id", conversation.Id);
                     upsert.Parameters.AddWithValue("@title", string.IsNullOrWhiteSpace(conversation.Title) ? "New chat" : conversation.Title);
                     upsert.Parameters.AddWithValue("@created", ToTimestamp(conversation.CreatedAtUtc));
                     upsert.Parameters.AddWithValue("@updated", ToTimestamp(conversation.UpdatedAtUtc));
+                    upsert.Parameters.AddWithValue("@important", conversation.IsImportant ? 1 : 0);
                     upsert.ExecuteNonQuery();
                 }
 
@@ -247,7 +217,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
                         modeParam.Value = message.Mode;
                         kindParam.Value = message.Kind.ToString();
                         toolNameParam.Value = message.ToolName ?? "";
-                        optionsParam.Value = message.OptionsJson ?? "";
+                        optionsParam.Value = EncodeOptions(message.Options);
                         insert.ExecuteNonQuery();
                     }
                 }
@@ -255,8 +225,25 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
                 transaction.Commit();
             }
         }
+
+        /// <summary>Sets the important flag without touching messages or timestamps.</summary>
+        public void SetConversationImportant(string id, bool isImportant)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return;
+
+            using (var connection = Open())
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "UPDATE conversations SET is_important = @important WHERE id = @id;";
+                command.Parameters.AddWithValue("@important", isImportant ? 1 : 0);
+                command.Parameters.AddWithValue("@id", id);
+                command.ExecuteNonQuery();
+            }
+        }
+
         /// <summary>Deletes a conversation (messages are removed via ON DELETE CASCADE).</summary>
-        public static void DeleteConversation(string id)
+        public void DeleteConversation(string id)
         {
             if (string.IsNullOrWhiteSpace(id))
                 return;
@@ -271,7 +258,7 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
         }
 
         /// <summary>Deletes every stored conversation and all of their messages.</summary>
-        public static void DeleteAllConversations()
+        public void DeleteAllConversations()
         {
             using (var connection = Open())
             using (var command = connection.CreateCommand())
@@ -324,11 +311,11 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
             return connection;
         }
 
-        private static ChatConversation? LoadConversationMeta(SQLiteConnection connection, string id)
+        private static ChatConversation LoadConversationMeta(SQLiteConnection connection, string id)
         {
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT id, title, created_at_utc, updated_at_utc FROM conversations WHERE id = @id;";
+                command.CommandText = "SELECT id, title, created_at_utc, updated_at_utc, is_important FROM conversations WHERE id = @id;";
                 command.Parameters.AddWithValue("@id", id);
                 using (var reader = command.ExecuteReader())
                 {
@@ -344,7 +331,8 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
                 Id = reader["id"] as string ?? "",
                 Title = reader["title"] as string ?? "",
                 CreatedAtUtc = ParseTimestamp(reader["created_at_utc"] as string),
-                UpdatedAtUtc = ParseTimestamp(reader["updated_at_utc"] as string)
+                UpdatedAtUtc = ParseTimestamp(reader["updated_at_utc"] as string),
+                IsImportant = Convert.ToInt32(reader["is_important"], CultureInfo.InvariantCulture) != 0
             };
         }
 
@@ -359,11 +347,36 @@ VALUES (@id, @position, @text, @reasoning, @mode, @kind, @tool_name, @options);"
         private static string ToTimestamp(DateTime value) =>
             value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 
-        private static DateTime ParseTimestamp(string? value)
+        private static DateTime ParseTimestamp(string value)
         {
             if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var result))
                 return result;
             return default(DateTime);
         }
+
+        private static string EncodeOptions(IReadOnlyList<string> options)
+        {
+            if (options == null || options.Count == 0)
+                return "";
+            try { return JsonConvert.SerializeObject(options); }
+            catch { return ""; }
+        }
+
+        private static List<string> DecodeOptions(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+                return new List<string>();
+            try
+            {
+                var options = JsonConvert.DeserializeObject<List<string>>(json);
+                return options ?? new List<string>();
+            }
+            catch
+            {
+                return new List<string>();
+            }
+        }
     }
 }
+
+

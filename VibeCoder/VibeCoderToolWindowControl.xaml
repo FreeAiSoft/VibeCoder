@@ -5,8 +5,9 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              xmlns:core="clr-namespace:Agent.Core.Services;assembly=Agent.Core"
-             xmlns:conv="clr-namespace:VibeCoder.Converters"
+             xmlns:sharedconv="clr-namespace:Agent.Toolkit.Wpf.Converters;assembly=Agent.Toolkit.Wpf"
              xmlns:controls="clr-namespace:VibeCoder.Controls"
+             xmlns:toolkit="clr-namespace:Agent.Toolkit.Wpf.Controls;assembly=Agent.Toolkit.Wpf"
              xmlns:md="clr-namespace:MaterialDesignThemes.Wpf;assembly=MaterialDesignThemes.Wpf"
              Background="{DynamicResource Dark.Window}"
              Foreground="{DynamicResource Dark.Text}"
@@ -40,7 +41,7 @@
         <SolidColorBrush x:Key="Material.Accent" Color="#64B5F6"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <SolidColorBrush x:Key="Code.Background" Color="#1E1E1E"/>
-        <conv:CodeTokensToTextBlockConverter x:Key="CodeToTextBlock"/>
+        <sharedconv:CodeTokensToTextBlockConverter x:Key="CodeToTextBlock"/>
 
         <Style x:Key="CodeScrollViewerStyle" TargetType="ScrollViewer">
             <EventSetter Event="PreviewMouseWheel" Handler="OnCodeScrollPreviewMouseWheel"/>
@@ -991,11 +992,8 @@
                                 <TextBlock Text="✕" FontSize="12" Foreground="{DynamicResource Dark.Text}"/>
                             </Button>
                         </Grid>
-                        <ProgressBar x:Name="ChatContextFillBar" Grid.Row="1" Height="4" Margin="0,6,0,0"
-                                     Minimum="0" Maximum="100" Value="0"
-                                     Foreground="{DynamicResource Dark.Accent}"/>
-                        <TextBlock x:Name="ChatTokenUsageText" Grid.Row="2" Margin="0,4,0,0"
-                                   Foreground="#C8C8C8" Text="Context window: —"/>
+                        <toolkit:ContextIndicator x:Name="ChatContextIndicator" Grid.Row="1" Grid.RowSpan="2"
+                                                  Margin="0,6,0,0"/>
                     </Grid>
                 </Border>
 
@@ -1004,7 +1002,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <controls:ChatMessagesControl Grid.Row="1" x:Name="ChatMessages"/>
+                    <toolkit:ChatMessagesControl Grid.Row="1" x:Name="ChatMessages"/>
                 </Grid>
 
                 <GridSplitter x:Name="ChatSplitter" Grid.Row="4" Height="5" HorizontalAlignment="Stretch"
@@ -1743,7 +1741,7 @@
                                 <controls:NotificationBanner Kind="Error" Message="Error sample: shows copy and send-to-chat." Margin="0,0,0,8"/>
 
                                 <TextBlock Text="Chat messages" FontWeight="SemiBold" Margin="0,16,0,8"/>
-                                <controls:ChatMessagesControl x:Name="GalleryChatMessages" MaxHeight="480"/>
+                                <toolkit:ChatMessagesControl x:Name="GalleryChatMessages" MaxHeight="480"/>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
