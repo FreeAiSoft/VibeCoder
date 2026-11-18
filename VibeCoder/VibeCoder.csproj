@@ -16,8 +16,8 @@
     <ProjectCapability Include="CreateVsixContainer" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="AgentToolkit" Version="1.9.0" />
-    <PackageReference Include="AgentToolkit.Wpf" Version="1.9.0" />
+    <PackageReference Include="AgentToolkit" Version="1.14.0" />
+    <PackageReference Include="AgentToolkit.Wpf" Version="1.14.0" />
 
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />

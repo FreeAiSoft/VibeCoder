@@ -1,14 +1,17 @@
 using System;
 using System.IO;
 using System.Threading;
+using Agent.Toolkit.Wpf.Controls;
 using NAudio.Wave;
 
 namespace VibeCoder.Services
 {
     /// <summary>
     /// Captures microphone audio as 16 kHz, 16-bit, mono PCM via NAudio (WaveInEvent).
+    /// Implements the shared recorder seam so the shared <see cref="Agent.Toolkit.Wpf.Controls.ChatControl"/>
+    /// can drive voice input without knowing about NAudio.
     /// </summary>
-    public sealed class MicrophoneRecorder : IDisposable
+    public sealed class MicrophoneRecorder : IDisposable, IMicrophoneRecorder
     {
         private readonly object _lock = new object();
         private WaveInEvent _waveIn;
